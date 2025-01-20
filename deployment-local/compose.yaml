@@ -1,0 +1,12 @@
+services:
+  ###########
+  # Chloria
+  ###########
+  chloria-backend:
+    build:
+      context: ../chloria-backend/
+      dockerfile: Dockerfile.local
+    volumes:
+      - ../:/usr/src/chloria/
+    tty: true
+    working_dir: /usr/src/chloria/chloria-backend/
