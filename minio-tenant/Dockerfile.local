@@ -1,0 +1,8 @@
+# Ref: https://github.com/minio/operator/blob/v6.0.4/helm/tenant/values.yaml#L32-L33
+FROM quay.io/minio/minio:RELEASE.2024-10-02T17-50-41Z
+
+COPY setup-buckets.sh /usr/src/setup-buckets.sh
+RUN chmod +x /usr/src/setup-buckets.sh
+
+ENTRYPOINT []
+CMD bash -c "sleep 1 && /usr/src/setup-buckets.sh" & minio server /data

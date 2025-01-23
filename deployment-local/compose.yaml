@@ -1,4 +1,31 @@
 services:
+  #########
+  # MinIO
+  #########
+  minio-operator:
+    build:
+      context: ../minio-operator/
+      dockerfile: Dockerfile.local
+    environment:
+      - MINIO_TENANT_ENDPOINT=http://minio-tenant:9000
+      - MINIO_TENANT_ROOT_USER=${MINIO_TENANT_ROOT_USER}
+      - MINIO_TENANT_ROOT_PASSWORD=${MINIO_TENANT_ROOT_PASSWORD}
+      - CHLORIA_ORIGIN_BUCKET_NAME=origin
+      - POETRY_CACHE_DIR=/usr/src/chloria/storage/minio-operator/cache/pypoetry
+    volumes:
+      - ../:/usr/src/chloria/
+    tty: true
+    working_dir: /usr/src/chloria/minio-operator/
+  minio-tenant:
+    build:
+      context: ../minio-tenant/
+      dockerfile: Dockerfile.local
+    environment:
+      - MINIO_ROOT_USER=${MINIO_TENANT_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_TENANT_ROOT_PASSWORD}
+      - MC_HOST_chloria=http://${MINIO_TENANT_ROOT_USER}:${MINIO_TENANT_ROOT_PASSWORD}@minio-tenant:9000
+    volumes:
+      - ../storage/minio-tenant/data/:/data/
   ###########
   # Chloria
   ###########
