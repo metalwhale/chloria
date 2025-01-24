@@ -33,6 +33,12 @@ services:
     build:
       context: ../chloria-backend/
       dockerfile: Dockerfile.local
+    environment:
+      - MINIO_OPERATOR_STS_ENDPOINT=http://minio-operator:4223
+      # - MINIO_OPERATOR_CACERT_FILE= # We don't need this env var in local since STS endpoint is HTTP
+      - MINIO_TENANT_ENDPOINT=http://minio-tenant:9000
+      - MINIO_WEB_IDENTITY_TOKEN_FILE=/usr/src/chloria/storage/chloria-backend/token
+      - CHLORIA_ORIGIN_BUCKET_NAME=origin
     volumes:
       - ../:/usr/src/chloria/
     tty: true

@@ -4,3 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.95"
+async-trait = "0.1.85"
+chrono = "0.4.39"
+futures = { version = "0.3.31", features = ["executor"] }
+minio = "0.1.0"
+reqwest = "0.12.12"
+serde = "1.0.217"
+serde-xml-rs = "0.6.0"
+tokio = "1.43.0"
