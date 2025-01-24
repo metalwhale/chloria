@@ -18,3 +18,9 @@ Start and get inside the container:
 docker compose up --build --remove-orphans -d
 docker compose exec chloria-backend bash
 ```
+
+Create a dummy token file for retrieving MinIO web identity (it's ok to leave this file empty):
+```bash
+mkdir -p /usr/src/chloria/storage/chloria-backend/
+touch /usr/src/chloria/storage/chloria-backend/token
+```
