@@ -26,6 +26,18 @@ services:
       - MC_HOST_chloria=http://${MINIO_TENANT_ROOT_USER}:${MINIO_TENANT_ROOT_PASSWORD}@minio-tenant:9000
     volumes:
       - ../storage/minio-tenant/data/:/data/
+  ##############
+  # PostgreSQL
+  ##############
+  postgresql:
+    image: postgres:16-bookworm # Ref: https://github.com/cloudnative-pg/charts/blob/cluster-v0.2.0/charts/cluster/values.yaml#L17
+    environment:
+      - PGDATA=/var/lib/postgresql/data/pgdata
+      - POSTGRES_DB=${POSTGRESQL_DB}
+      - POSTGRES_USER=${POSTGRESQL_USER}
+      - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+    volumes:
+      - ../storage/postgresql/data/:/var/lib/postgresql/data/
   ###########
   # Chloria
   ###########
@@ -40,6 +52,7 @@ services:
       # - MINIO_OPERATOR_CACERT_FILE= # We don't need this env var in local since STS endpoint is HTTP
       - MINIO_TENANT_ENDPOINT=http://minio-tenant:9000
       - MINIO_WEB_IDENTITY_TOKEN_FILE=/usr/src/chloria/storage/chloria-backend/token
+      - DATABASE_URL=postgres://${POSTGRESQL_USER}:${POSTGRESQL_PASSWORD}@postgresql/${POSTGRESQL_DB}
       - CHLORIA_ORIGIN_BUCKET_NAME=origin
       - CHLORIA_CASE_PERMITS_NUM=10
       - CHLORIA_TASK_PERMITS_NUM=10
