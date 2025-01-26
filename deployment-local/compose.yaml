@@ -26,6 +26,19 @@ services:
       - MC_HOST_chloria=http://${MINIO_TENANT_ROOT_USER}:${MINIO_TENANT_ROOT_PASSWORD}@minio-tenant:9000
     volumes:
       - ../storage/minio-tenant/data/:/data/
+  ##############
+  # PostgreSQL
+  ##############
+  postgresql:
+    image: postgres:16-bookworm # Ref: https://github.com/cloudnative-pg/charts/blob/cluster-v0.2.0/charts/cluster/values.yaml#L17
+    user: postgres # See: https://stackoverflow.com/questions/60193781/postgres-with-docker-compose-gives-fatal-role-root-does-not-exist-error
+    environment:
+      - PGDATA=/var/lib/postgresql/data/pgdata
+      - POSTGRES_DB=${POSTGRESQL_DB}
+      - POSTGRES_USER=${POSTGRESQL_USER}
+      - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+    volumes:
+      - ../storage/postgresql/data:/var/lib/postgresql/data
   ###########
   # Chloria
   ###########
