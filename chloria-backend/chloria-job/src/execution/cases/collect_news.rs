@@ -2,16 +2,23 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use log::{error, info};
 use tokio::sync::Semaphore;
 
 use super::{
     super::{
-        ports::{file_storage::FileStorage, http_helper::HttpHelper, news_fetcher::NewsFetcher},
-        tasks::{save_news::SaveNewsTask, LocalTask},
+        ports::{
+            file_storage::FileStorage, http_helper::HttpHelper, news_fetcher::NewsFetcher, repository::Repository,
+        },
+        tasks::{
+            save_news::{SaveNewsInput, SaveNewsTask},
+            LocalTask,
+        },
         workshop::Workshop,
     },
     LocalCase,
 };
+use crate::domain::news::NewsEntity;
 
 type CollectNewsCaseOutput = i32;
 
@@ -19,6 +26,7 @@ struct CollectNewsCase {
     news_fetcher: Arc<dyn NewsFetcher>,
     http_helper: Arc<dyn HttpHelper>,
     file_storage: Arc<dyn FileStorage>,
+    repository: Arc<dyn Repository>,
     task_permits_num: usize,
 }
 
@@ -28,6 +36,7 @@ impl Workshop {
             news_fetcher: Arc::clone(&self.news_fetcher),
             http_helper: Arc::clone(&self.http_helper),
             file_storage: Arc::clone(&self.file_storage),
+            repository: Arc::clone(&self.repository),
             task_permits_num: self.config.task_permits_num,
         };
         self.run_local_case(case).await
@@ -41,22 +50,46 @@ impl LocalCase for CollectNewsCase {
     async fn execute(self) -> Result<Self::Output> {
         let semaphore = Arc::new(Semaphore::new(self.task_permits_num));
         let mut count = 0;
-        for handle in self
+        for (article_id, handle) in self
             .news_fetcher
-            .fetch_news(Box::new(move |a| {
-                let task = SaveNewsTask::new(a, Arc::clone(&self.http_helper), Arc::clone(&self.file_storage));
+            .fetch_news(Box::new(move |article| {
+                let news = NewsEntity::new(article.id);
+                let task = SaveNewsTask::new(
+                    SaveNewsInput {
+                        source_name: article.source_name,
+                        article_id: news.article_id.clone(),
+                        link: article.link,
+                        title: article.title,
+                        short_text: article.short_text,
+                        long_text: article.long_text,
+                        image_url: article.image_url,
+                        published_time: article.published_time,
+                    },
+                    Arc::clone(&self.http_helper),
+                    Arc::clone(&self.file_storage),
+                    Arc::clone(&self.repository),
+                );
                 let semaphore = Arc::clone(&semaphore);
-                tokio::task::spawn_local(async move {
-                    let _permit = semaphore.acquire().await?;
-                    let is_effective = task.perform().await?;
-                    Ok(is_effective)
-                })
+                (
+                    news.article_id,
+                    tokio::task::spawn_local(async move {
+                        let _permit = semaphore.acquire().await?;
+                        let news_id = task.perform().await?;
+                        Ok(news_id)
+                    }),
+                )
             }))
             .await
         {
-            if let Ok(Ok(is_effective)) = handle.await {
-                if is_effective {
-                    count += 1;
+            if let Ok(result) = handle.await {
+                match result {
+                    Ok(news_id) => {
+                        if let Some(news_id) = news_id {
+                            info!("news_id={}, article_id={}", news_id, article_id);
+                            count += 1;
+                        }
+                    }
+                    Err(error) => error!("article_id={}, error={}", article_id, error),
                 }
             }
         }
@@ -77,6 +110,7 @@ mod tests {
             file_storage::MockFileStorage,
             http_helper::MockHttpHelper,
             news_fetcher::{FetchNewsArticle, FetchNewsHandler, FetchNewsOutput, MockNewsFetcher},
+            repository::MockRepository,
         },
         workshop::{Config, Workshop},
     };
@@ -131,10 +165,16 @@ mod tests {
             .expect_upload_file()
             .times(CASES_NUM * PAGES_NUM * PAGE_NEWS_NUM)
             .returning(|_| Box::pin(async { Ok("".to_string()) }));
+        let mut mock_repository = MockRepository::new();
+        mock_repository
+            .expect_insert_news()
+            .times(CASES_NUM * PAGES_NUM * PAGE_NEWS_NUM)
+            .returning(|_| Ok(Some(0)));
         let workshop = Workshop::new(
             Arc::new(mock_news_fetcher),
             Arc::new(mock_http_helper),
             Arc::new(mock_file_storage),
+            Arc::new(mock_repository),
             Config {
                 case_permits_num: CASE_PERMITS_NUM,
                 task_permits_num: TASK_PERMITS_NUM,
