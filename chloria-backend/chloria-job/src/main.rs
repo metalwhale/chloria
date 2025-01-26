@@ -2,6 +2,7 @@ mod domain;
 mod execution;
 mod infrastructure;
 mod interface;
+mod schema;
 
 use std::env;
 use std::sync::Arc;
@@ -12,6 +13,7 @@ use env_logger::Env;
 use crate::execution::workshop::{Config, Workshop};
 use crate::infrastructure::minio::MinioClient;
 use crate::infrastructure::newsdata::NewsdataClient;
+use crate::infrastructure::postgresql::PostgresqlClient;
 use crate::infrastructure::reqwest::ReqwestTool;
 use crate::interface::commander::Commander;
 
@@ -24,6 +26,7 @@ async fn main() -> Result<()> {
     let minio_operator_cacert_file = env::var("MINIO_OPERATOR_CACERT_FILE").ok();
     let minio_tenant_endpoint = env::var("MINIO_TENANT_ENDPOINT")?;
     let minio_web_identity_token_file = env::var("MINIO_WEB_IDENTITY_TOKEN_FILE")?;
+    let database_url = env::var("DATABASE_URL")?;
     let chloria_origin_bucket_name = env::var("CHLORIA_ORIGIN_BUCKET_NAME")?;
     let chloria_case_permits_num = env::var("CHLORIA_CASE_PERMITS_NUM")?.parse().unwrap_or(10);
     let chloria_task_permits_num = env::var("CHLORIA_TASK_PERMITS_NUM")?.parse().unwrap_or(10);
@@ -38,11 +41,13 @@ async fn main() -> Result<()> {
         minio_tenant_endpoint,
         chloria_origin_bucket_name,
     )?;
+    let postgresql_client = PostgresqlClient::new(database_url)?;
     // Initialize execution
     let workshop = Workshop::new(
         Arc::new(newsdata_client),
         Arc::new(reqwest_tool),
         Arc::new(minio_client),
+        Arc::new(postgresql_client),
         Config {
             case_permits_num: chloria_case_permits_num,
             task_permits_num: chloria_task_permits_num,
