@@ -13,7 +13,7 @@ impl<'c> Commander<'c> {
     }
 
     pub(crate) async fn collect_news(&self) -> Result<()> {
-        let case = CollectNewsCase::new(self.config.file_storage);
+        let case = CollectNewsCase::new(self.config.news_fetcher, self.config.file_storage);
         case.execute().await?;
         Ok(())
     }

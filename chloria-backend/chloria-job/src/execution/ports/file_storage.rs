@@ -1,5 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use chrono::{DateTime, Local};
 
 pub(crate) enum FileObjectKind {
     Origin,
@@ -7,6 +8,10 @@ pub(crate) enum FileObjectKind {
 
 pub(crate) struct UploadFileInput {
     pub(crate) kind: FileObjectKind,
+    pub(crate) source_name: String, // Code name of the source used to fetch the news
+    pub(crate) key: String,         // Unique key to differentiate this file from others
+    pub(crate) bytes: Vec<u8>,      // Content of the file
+    pub(crate) created_time: DateTime<Local>, // Date and time when the file was created
 }
 
 #[async_trait]
