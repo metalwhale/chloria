@@ -4,14 +4,15 @@ mod infrastructure;
 mod interface;
 
 use std::env;
+use std::sync::Arc;
 
 use anyhow::Result;
 use env_logger::Env;
 
+use crate::execution::workshop::Workshop;
 use crate::infrastructure::minio::MinioClient;
 use crate::infrastructure::newsdata::NewsdataClient;
 use crate::interface::commander::Commander;
-use crate::interface::config::Config;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -33,9 +34,10 @@ async fn main() -> Result<()> {
         minio_tenant_endpoint,
         chloria_origin_bucket_name,
     )?;
+    // Initialize execution
+    let workshop = Workshop::new(&newsdata_client, Arc::new(minio_client));
     // Initialize interface
-    let config = Config::new(&newsdata_client, &minio_client);
-    let commander = Commander::new(config);
+    let commander = Commander::new(&workshop);
     commander.collect_news().await?;
     Ok(())
 }

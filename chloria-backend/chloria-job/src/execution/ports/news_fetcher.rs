@@ -1,6 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
+use tokio::task::JoinHandle;
 
 pub(crate) struct FetchNewsOutput {
     pub(crate) source_name: String,        // Code name of the source used to fetch the news
@@ -15,5 +16,8 @@ pub(crate) struct FetchNewsOutput {
 
 #[async_trait]
 pub(crate) trait NewsFetcher {
-    async fn fetch_news(&self) -> Result<Vec<FetchNewsOutput>>;
+    async fn fetch_news(
+        &self,
+        handler: Box<dyn Fn(FetchNewsOutput) -> JoinHandle<Result<()>> + Send>,
+    ) -> Vec<JoinHandle<Result<()>>>;
 }

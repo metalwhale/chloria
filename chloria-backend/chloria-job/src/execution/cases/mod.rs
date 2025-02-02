@@ -1,1 +1,1 @@
-pub(crate) mod collect_news;
+mod collect_news;

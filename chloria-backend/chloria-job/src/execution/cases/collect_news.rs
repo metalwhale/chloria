@@ -1,42 +1,32 @@
-use anyhow::Result;
-use reqwest::Client;
+use std::sync::Arc;
 
-use crate::{
-    domain::file::FileEntity,
-    execution::ports::{
-        file_storage::{FileObjectKind, FileStorage, UploadFileInput},
-        news_fetcher::NewsFetcher,
-    },
+use anyhow::Result;
+
+use super::super::{
+    tasks::{run, save_news::SaveNewsTask},
+    workshop::Workshop,
 };
 
 pub(crate) struct CollectNewsCase<'c> {
-    news_fetcher: &'c dyn NewsFetcher,
-    file_storage: &'c dyn FileStorage,
+    workshop: &'c Workshop<'c>,
+}
+
+impl<'w> Workshop<'w> {
+    pub(crate) fn new_collect_news_case(&self) -> CollectNewsCase {
+        CollectNewsCase { workshop: &self }
+    }
 }
 
 impl<'c> CollectNewsCase<'c> {
-    pub(crate) fn new(news_fetcher: &'c dyn NewsFetcher, file_storage: &'c dyn FileStorage) -> Self {
-        Self {
-            news_fetcher,
-            file_storage,
-        }
-    }
-
     pub(crate) async fn execute(&self) -> Result<()> {
-        for news in self.news_fetcher.fetch_news().await? {
-            if let Some(image_url) = news.image_url {
-                let file = FileEntity::new(news.id, news.published_time);
-                let image_bytes: Vec<u8> = Client::new().get(image_url).send().await?.bytes().await?.into();
-                self.file_storage
-                    .upload_file(UploadFileInput {
-                        kind: FileObjectKind::Origin,
-                        source_name: news.source_name,
-                        key: file.key,
-                        bytes: image_bytes,
-                        created_time: file.created_time,
-                    })
-                    .await?;
-            }
+        let file_storage = Arc::clone(&self.workshop.file_storage);
+        for handle in self
+            .workshop
+            .news_fetcher
+            .fetch_news(Box::new(move |n| run(SaveNewsTask::new(n, Arc::clone(&file_storage)))))
+            .await
+        {
+            handle.await??;
         }
         Ok(())
     }
