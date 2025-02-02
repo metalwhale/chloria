@@ -2,9 +2,10 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::NaiveDateTime;
 use chrono_tz::Tz;
-use log::info;
+use log::{error, info};
 use reqwest::Client;
 use serde::Deserialize;
+use tokio::task::JoinHandle;
 
 use crate::execution::ports::news_fetcher::{FetchNewsOutput, NewsFetcher};
 
@@ -44,7 +45,7 @@ impl NewsdataClient {
         }
     }
 
-    async fn fetch_one_page(&self, page: Option<String>) -> Result<(u16, Vec<FetchNewsOutput>, Option<String>)> {
+    async fn fetch_page(&self, page: Option<String>) -> Result<(u16, Vec<FetchNewsOutput>, Option<String>)> {
         // Doc: https://newsdata.io/news-sources/Japan-news-api
         let mut url = format!("https://newsdata.io/api/1/latest?country=jp&apikey={}", self.api_key);
         if let Some(page) = page {
@@ -86,7 +87,10 @@ impl NewsdataClient {
 
 #[async_trait]
 impl NewsFetcher for NewsdataClient {
-    async fn fetch_news(&self) -> Result<Vec<FetchNewsOutput>> {
+    async fn fetch_news(
+        &self,
+        handler: Box<dyn Fn(FetchNewsOutput) -> JoinHandle<Result<()>> + Send>,
+    ) -> Vec<JoinHandle<Result<()>>> {
         let mut outputs = vec![];
         let mut remaining_results_num = None;
         let mut page = None;
@@ -101,27 +105,36 @@ impl NewsFetcher for NewsdataClient {
             } {
                 break;
             }
-            let (total_results, mut page_outputs, next_page) = self.fetch_one_page(page).await?;
-            info!(
-                "page_index={}, total_results={}, page_outputs.len={}, next_page={:?}",
-                page_index,
-                total_results,
-                page_outputs.len(),
-                next_page,
-            );
-            remaining_results_num = Some(
-                match remaining_results_num {
-                    Some(remaining_results_num) => remaining_results_num,
-                    None => total_results as i32,
-                } - page_outputs.len() as i32,
-            );
-            outputs.append(&mut page_outputs);
-            match next_page {
-                Some(next_page) => page = Some(next_page),
-                None => break,
-            };
-            page_index += 1;
+            match self.fetch_page(page).await {
+                Ok((total_results, page_outputs, next_page)) => {
+                    info!(
+                        "page_index={}, total_results={}, page_outputs.len={}, next_page={:?}",
+                        page_index,
+                        total_results,
+                        page_outputs.len(),
+                        next_page,
+                    );
+                    remaining_results_num = Some(
+                        match remaining_results_num {
+                            Some(remaining_results_num) => remaining_results_num,
+                            None => total_results as i32,
+                        } - page_outputs.len() as i32,
+                    );
+                    for news in page_outputs {
+                        outputs.push(handler(news));
+                    }
+                    match next_page {
+                        Some(next_page) => page = Some(next_page),
+                        None => break,
+                    };
+                    page_index += 1;
+                }
+                Err(error) => {
+                    error!("page_index={}, error={}", page_index, error);
+                    break;
+                }
+            }
         }
-        Ok(outputs)
+        outputs
     }
 }
