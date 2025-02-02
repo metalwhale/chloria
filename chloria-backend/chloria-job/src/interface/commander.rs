@@ -1,19 +1,18 @@
 use anyhow::Result;
 
-use super::config::Config;
-use crate::execution::cases::collect_news::CollectNewsCase;
+use crate::execution::factory::Factory;
 
 pub(crate) struct Commander<'c> {
-    config: Config<'c>,
+    factory: &'c Factory<'c>,
 }
 
 impl<'c> Commander<'c> {
-    pub(crate) fn new(config: Config<'c>) -> Self {
-        Self { config }
+    pub(crate) fn new(factory: &'c Factory) -> Self {
+        Self { factory }
     }
 
     pub(crate) async fn collect_news(&self) -> Result<()> {
-        let case = CollectNewsCase::new(self.config.news_fetcher, self.config.file_storage);
+        let case = self.factory.new_collect_news_case();
         case.execute().await?;
         Ok(())
     }

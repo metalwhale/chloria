@@ -5,6 +5,7 @@ use chrono_tz::Tz;
 use log::info;
 use reqwest::Client;
 use serde::Deserialize;
+use tokio::task::JoinHandle;
 
 use crate::execution::ports::news_fetcher::{FetchNewsOutput, NewsFetcher};
 
@@ -44,7 +45,7 @@ impl NewsdataClient {
         }
     }
 
-    async fn fetch_one_page(&self, page: Option<String>) -> Result<(Vec<FetchNewsOutput>, u16, Option<String>)> {
+    async fn fetch_page(&self, page: Option<String>) -> Result<(u16, Vec<FetchNewsOutput>, Option<String>)> {
         // Doc: https://newsdata.io/news-sources/Japan-news-api
         let mut url = format!("https://newsdata.io/api/1/latest?country=jp&apikey={}", self.api_key);
         if let Some(page) = page {
@@ -81,13 +82,16 @@ impl NewsdataClient {
                 published_time,
             });
         }
-        Ok((output, news_response.total_results, news_response.next_page))
+        Ok((news_response.total_results, output, news_response.next_page))
     }
 }
 
 #[async_trait]
 impl NewsFetcher for NewsdataClient {
-    async fn fetch_news(&self) -> Result<Vec<FetchNewsOutput>> {
+    async fn fetch_news(
+        &self,
+        handler: Box<dyn Fn(FetchNewsOutput) -> JoinHandle<Result<()>> + Send>,
+    ) -> Vec<JoinHandle<Result<()>>> {
         let mut output = vec![];
         let mut remaining_results_num = None;
         let mut page = None;
@@ -102,27 +106,32 @@ impl NewsFetcher for NewsdataClient {
             } {
                 break;
             }
-            let (mut page_output, total_results, next_page) = self.fetch_one_page(page).await?;
-            info!(
-                "page_count={}, page_output.len={}, total_results={}, next_page={:?}",
-                page_count,
-                page_output.len(),
-                total_results,
-                next_page,
-            );
-            remaining_results_num = Some(
-                match remaining_results_num {
-                    Some(remaining_results_num) => remaining_results_num,
-                    None => total_results,
-                } - page_output.len() as u16,
-            );
-            output.append(&mut page_output);
-            match next_page {
-                Some(next_page) => page = Some(next_page),
-                None => break,
-            };
-            page_count += 1;
+            if let Ok((total_results, page_output, next_page)) = self.fetch_page(page).await {
+                info!(
+                    "page_count={}, page_output.len={}, total_results={}, next_page={:?}",
+                    page_count,
+                    page_output.len(),
+                    total_results,
+                    next_page,
+                );
+                remaining_results_num = Some(
+                    match remaining_results_num {
+                        Some(remaining_results_num) => remaining_results_num,
+                        None => total_results,
+                    } - page_output.len() as u16,
+                );
+                for news in page_output {
+                    output.push(handler(news));
+                }
+                match next_page {
+                    Some(next_page) => page = Some(next_page),
+                    None => break,
+                };
+                page_count += 1;
+            } else {
+                break;
+            }
         }
-        Ok(output)
+        output
     }
 }
