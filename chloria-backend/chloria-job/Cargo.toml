@@ -9,7 +9,6 @@ async-trait = "0.1.85"
 chrono = "0.4.39"
 chrono-tz = "0.10.1"
 env_logger = "0.11.6"
-futures = { version = "0.3.31", features = ["executor"] }
 log = "0.4.25"
 minio = "0.1.0"
 rand = "0.9.0"

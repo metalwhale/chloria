@@ -1,73 +1,19 @@
-use std::{fs, sync::RwLock};
+use std::fs;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, FixedOffset, Local, TimeDelta};
 use minio::s3::{
     args::BucketExistsArgs,
     client::Client as S3Client,
-    creds::{Credentials, Provider},
+    creds::{Credentials, StaticProvider},
     http::BaseUrl,
 };
 use reqwest::{Certificate, Client as HttpClient};
 use serde::Deserialize;
-use tokio::runtime::Handle;
+use tokio::sync::RwLock;
 
 use crate::execution::ports::file_storage::{FileObjectKind, FileStorage, UploadFileInput};
-
-pub(crate) struct MinioClient {
-    client: S3Client,
-    origin_bucket_name: String,
-}
-
-impl MinioClient {
-    pub(crate) fn new(
-        operator_sts_endpoint: String,
-        operator_cacert_file: Option<String>,
-        web_identity_token_file: String,
-        tenant_endpoint: String,
-        origin_bucket_name: String,
-    ) -> Result<Self> {
-        let client = {
-            let operator_cacert = match operator_cacert_file {
-                Some(cacert_file) => Some(fs::read_to_string(cacert_file)?),
-                None => None,
-            };
-            let web_identity_token = fs::read_to_string(web_identity_token_file)?;
-            let provider = WebIdentityProvider::new(operator_sts_endpoint, operator_cacert, web_identity_token);
-            S3Client::new(
-                tenant_endpoint.parse::<BaseUrl>()?,
-                Some(Box::new(provider)),
-                None,
-                None,
-            )?
-        };
-        Ok(Self {
-            client,
-            origin_bucket_name,
-        })
-    }
-}
-
-#[async_trait]
-impl FileStorage for MinioClient {
-    async fn upload_file(&self, input: UploadFileInput) -> Result<()> {
-        let bucket_name = match input.kind {
-            FileObjectKind::Origin => self.origin_bucket_name.clone(),
-        };
-        let result = self
-            .client
-            .bucket_exists(&BucketExistsArgs {
-                bucket: &bucket_name,
-                extra_headers: None,
-                extra_query_params: None,
-                region: None,
-            })
-            .await?;
-        println!("{}", result);
-        Ok(())
-    }
-}
 
 // Doc: https://min.io/docs/minio/linux/developers/security-token-service/AssumeRoleWithWebIdentity.html#response-elements
 #[derive(Deserialize)]
@@ -91,33 +37,80 @@ struct AssumeRoleWithWebIdentityResultCredentials {
     session_token: String,
 }
 
-#[derive(Debug)]
-struct WebIdentityProvider {
+pub(crate) struct MinioClient {
     operator_sts_endpoint: String,
     operator_cacert: Option<Certificate>,
     web_identity_token: String,
-    creds: RwLock<Option<Credentials>>,
+    tenant_endpoint: String,
     expiration: RwLock<Option<DateTime<FixedOffset>>>,
+    client: RwLock<Option<S3Client>>,
+    origin_bucket_name: String,
 }
 
-impl WebIdentityProvider {
-    fn new(operator_sts_endpoint: String, operator_cacert: Option<String>, web_identity_token: String) -> Self {
-        let operator_cacert = match operator_cacert {
-            Some(cacert) => {
-                Some(Certificate::from_pem(cacert.as_bytes()).expect("Failed to read the operator's CA cert."))
-            }
+impl MinioClient {
+    pub(crate) fn new(
+        operator_sts_endpoint: String,
+        operator_cacert_file: Option<String>,
+        web_identity_token_file: String,
+        tenant_endpoint: String,
+        origin_bucket_name: String,
+    ) -> Result<Self> {
+        let operator_cacert = match operator_cacert_file {
+            Some(cacert_file) => fs::read_to_string(cacert_file).ok(),
             None => None,
         };
-        Self {
+        let operator_cacert = match operator_cacert {
+            Some(cacert) => Certificate::from_pem(cacert.as_bytes()).ok(),
+            None => None,
+        };
+        let web_identity_token = fs::read_to_string(web_identity_token_file)?;
+        Ok(Self {
             operator_sts_endpoint,
             operator_cacert,
             web_identity_token,
-            creds: RwLock::new(None),
+            tenant_endpoint,
             expiration: RwLock::new(None),
-        }
+            client: RwLock::new(None),
+            origin_bucket_name,
+        })
     }
 
-    async fn retrieve_web_identity(&self) -> Result<Credentials> {
+    async fn reload(&self) -> Result<()> {
+        if !self.is_expired().await {
+            return Ok(());
+        }
+        let mut client = self.client.write().await;
+        // Check the expiration again, just in case another thread has updated it recently while we were waiting for the lock
+        if !self.is_expired().await {
+            return Ok(());
+        }
+        let credentials = self.assume_role().await?;
+        let provider = StaticProvider::new(
+            &credentials.access_key,
+            &credentials.secret_key,
+            credentials.session_token.as_deref(),
+        );
+        *client = Some(S3Client::new(
+            self.tenant_endpoint.parse::<BaseUrl>()?,
+            Some(Box::new(provider)),
+            None,
+            None,
+        )?);
+        Ok(())
+    }
+
+    async fn is_expired(&self) -> bool {
+        let is_expired = match *self.expiration.read().await {
+            Some(expiration) => {
+                const EXPIRATION_BUFFER: TimeDelta = Duration::minutes(1);
+                expiration - EXPIRATION_BUFFER < Local::now()
+            }
+            None => true,
+        };
+        is_expired
+    }
+
+    async fn assume_role(&self) -> Result<Credentials> {
         let client = match self.operator_cacert.clone() {
             Some(operator_cacert) => HttpClient::builder().add_root_certificate(operator_cacert).build()?,
             None => HttpClient::new(),
@@ -135,39 +128,37 @@ impl WebIdentityProvider {
             .text()
             .await?;
         let response: AssumeRoleWithWebIdentityResponse = serde_xml_rs::from_str(&response_text)?;
-        let mut expiration = self.expiration.write().unwrap();
+        let mut expiration = self.expiration.write().await;
         *expiration = Some(DateTime::parse_from_rfc3339(&response.result.credentials.expiration)?);
-        return Ok(Credentials {
+        Ok(Credentials {
             access_key: response.result.credentials.access_key_id,
             secret_key: response.result.credentials.secret_access_key,
             session_token: Some(response.result.credentials.session_token),
-        });
+        })
     }
 }
 
-impl Provider for WebIdentityProvider {
-    fn fetch(&self) -> Credentials {
-        let should_renew = match self.expiration.read().unwrap().clone() {
-            Some(expiration) => {
-                const EXPIRATION_BUFFER: TimeDelta = Duration::minutes(1);
-                expiration - EXPIRATION_BUFFER < Local::now()
-            }
-            None => true,
+#[async_trait]
+impl FileStorage for MinioClient {
+    async fn upload_file(&self, input: UploadFileInput) -> Result<()> {
+        self.reload().await?;
+        let client = self.client.read().await;
+        let client = match &*client {
+            Some(client) => client,
+            None => bail!("The client has not been initialized."),
         };
-        if should_renew {
-            // See: https://stackoverflow.com/questions/66035290/how-do-i-await-a-future-inside-a-non-async-method-which-was-called-from-an-async
-            let handle = Handle::current();
-            let _ = handle.enter();
-            let mut creds = self.creds.write().unwrap();
-            *creds = Some(
-                futures::executor::block_on(self.retrieve_web_identity()).expect("Cannot retrieve the web identity"),
-            );
-        }
-        return self
-            .creds
-            .read()
-            .unwrap()
-            .clone()
-            .expect("The web identity has not been retrieved yet");
+        let bucket_name = match input.kind {
+            FileObjectKind::Origin => &self.origin_bucket_name,
+        };
+        let result = client
+            .bucket_exists(&BucketExistsArgs {
+                bucket: &bucket_name,
+                extra_headers: None,
+                extra_query_params: None,
+                region: None,
+            })
+            .await?;
+        println!("{}", result);
+        Ok(())
     }
 }
