@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::NaiveDateTime;
@@ -47,12 +49,46 @@ impl NewsdataClient {
 
     async fn fetch_page(&self, page: Option<String>) -> Result<(u16, Vec<FetchNewsOutput>, Option<String>)> {
         // Doc: https://newsdata.io/news-sources/Japan-news-api
-        let mut url = format!("https://newsdata.io/api/1/latest?country=jp&apikey={}", self.api_key);
-        if let Some(page) = page {
-            url.push_str(&format!("&page={page}"));
-        }
-        let response_text = Client::new().get(url).send().await?.text().await?;
-        let news_response: NewsResponse = serde_json::from_str(&response_text)?;
+        // let mut url = format!("https://newsdata.io/api/1/latest?country=jp&apikey={}", self.api_key);
+        // if let Some(page) = page {
+        //     url.push_str(&format!("&page={page}"));
+        // }
+        // let response_text = Client::new().get(url).send().await?.text().await?;
+        // let news_response: NewsResponse = serde_json::from_str(&response_text)?;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let news_response = NewsResponse {
+            total_results: 10,
+            results: vec![
+                NewsResponseResult {
+                    article_id: "1".to_string(),
+                    link: None,
+                    title: None,
+                    description: None,
+                    image_url: Some("1".to_string()),
+                    pub_date: None,
+                    pub_date_tz: None,
+                },
+                NewsResponseResult {
+                    article_id: "2".to_string(),
+                    link: None,
+                    title: None,
+                    description: None,
+                    image_url: Some("2".to_string()),
+                    pub_date: None,
+                    pub_date_tz: None,
+                },
+                NewsResponseResult {
+                    article_id: "3".to_string(),
+                    link: None,
+                    title: None,
+                    description: None,
+                    image_url: Some("3".to_string()),
+                    pub_date: None,
+                    pub_date_tz: None,
+                },
+            ],
+            next_page: Some("".to_string()),
+        };
         let mut output = vec![];
         for result in news_response.results.into_iter() {
             let published_time = if let (Some(pub_date), Some(pub_date_tz)) = (result.pub_date, result.pub_date_tz) {

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::Client;
@@ -15,6 +17,8 @@ impl ReqwestTool {
 #[async_trait]
 impl HttpHelper for ReqwestTool {
     async fn get(&self, url: &str) -> Result<Vec<u8>> {
-        Ok(Client::new().get(url).send().await?.bytes().await?.into())
+        // Ok(Client::new().get(url).send().await?.bytes().await?.into())
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        Ok(vec![])
     }
 }
