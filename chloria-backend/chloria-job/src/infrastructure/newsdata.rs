@@ -5,9 +5,8 @@ use chrono_tz::Tz;
 use log::{error, info};
 use reqwest::Client;
 use serde::Deserialize;
-use tokio::task::JoinHandle;
 
-use crate::execution::ports::news_fetcher::{FetchNewsOutput, NewsFetcher};
+use crate::execution::ports::news_fetcher::{FetchNewsArticle, FetchNewsHandler, FetchNewsOutput, NewsFetcher};
 
 // Doc: https://newsdata.io/documentation/#http_response
 #[derive(Deserialize)]
@@ -45,7 +44,7 @@ impl NewsdataClient {
         }
     }
 
-    async fn fetch_page(&self, page: Option<String>) -> Result<(u16, Vec<FetchNewsOutput>, Option<String>)> {
+    async fn fetch_page(&self, page: Option<String>) -> Result<(u16, Vec<FetchNewsArticle>, Option<String>)> {
         // Doc: https://newsdata.io/news-sources/Japan-news-api
         let mut url = format!("https://newsdata.io/api/1/latest?country=jp&apikey={}", self.api_key);
         if let Some(page) = page {
@@ -54,7 +53,7 @@ impl NewsdataClient {
         let response_text = Client::new().get(url).send().await?.text().await?;
         let news_response: NewsResponse = serde_json::from_str(&response_text)
             .with_context(|| format!("Deserializing the response text: {}", response_text))?;
-        let mut outputs = vec![];
+        let mut articles = vec![];
         for result in news_response.results.into_iter() {
             let published_time = match (result.pub_date, result.pub_date_tz) {
                 (Some(pub_date), Some(pub_date_tz)) => {
@@ -70,7 +69,7 @@ impl NewsdataClient {
                 }
                 _ => None,
             };
-            outputs.push(FetchNewsOutput {
+            articles.push(FetchNewsArticle {
                 source_name: "NewsData".to_string(),
                 id: Some(result.article_id),
                 link: result.link,
@@ -81,16 +80,13 @@ impl NewsdataClient {
                 published_time,
             });
         }
-        Ok((news_response.total_results, outputs, news_response.next_page))
+        Ok((news_response.total_results, articles, news_response.next_page))
     }
 }
 
 #[async_trait]
 impl NewsFetcher for NewsdataClient {
-    async fn fetch_news(
-        &self,
-        handler: Box<dyn Fn(FetchNewsOutput) -> JoinHandle<Result<()>> + Send>,
-    ) -> Vec<JoinHandle<Result<()>>> {
+    async fn fetch_news(&self, handler: FetchNewsHandler) -> Vec<FetchNewsOutput> {
         let mut outputs = vec![];
         let mut remaining_results_num = None;
         let mut page = None;
@@ -106,22 +102,22 @@ impl NewsFetcher for NewsdataClient {
                 break;
             }
             match self.fetch_page(page).await {
-                Ok((total_results, page_outputs, next_page)) => {
+                Ok((total_results, page_articles, next_page)) => {
                     info!(
-                        "page_index={}, total_results={}, page_outputs.len={}, next_page={:?}",
+                        "page_index={}, total_results={}, page_articles.len={}, next_page={:?}",
                         page_index,
                         total_results,
-                        page_outputs.len(),
+                        page_articles.len(),
                         next_page,
                     );
                     remaining_results_num = Some(
                         match remaining_results_num {
                             Some(remaining_results_num) => remaining_results_num,
                             None => total_results as i32,
-                        } - page_outputs.len() as i32,
+                        } - page_articles.len() as i32,
                     );
-                    for news in page_outputs {
-                        outputs.push(handler(news));
+                    for article in page_articles {
+                        outputs.push(handler(article));
                     }
                     match next_page {
                         Some(next_page) => page = Some(next_page),

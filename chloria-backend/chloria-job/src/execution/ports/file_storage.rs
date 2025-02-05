@@ -1,6 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
+use mockall::automock;
 
 pub(crate) enum FileObjectKind {
     Origin,
@@ -14,6 +15,7 @@ pub(crate) struct UploadFileInput {
     pub(crate) created_time: DateTime<Local>, // Date and time when the file was created
 }
 
+#[automock]
 #[async_trait]
 pub(crate) trait FileStorage {
     async fn upload_file(&self, input: UploadFileInput) -> Result<()>;
