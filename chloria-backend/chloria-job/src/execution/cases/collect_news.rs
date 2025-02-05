@@ -19,11 +19,18 @@ impl<'w> Workshop<'w> {
 
 impl<'c> CollectNewsCase<'c> {
     pub(crate) async fn execute(&self) -> Result<()> {
+        let http_helper = Arc::clone(&self.workshop.http_helper);
         let file_storage = Arc::clone(&self.workshop.file_storage);
         for handle in self
             .workshop
             .news_fetcher
-            .fetch_news(Box::new(move |n| run(SaveNewsTask::new(n, Arc::clone(&file_storage)))))
+            .fetch_news(Box::new(move |n| {
+                run(SaveNewsTask::new(
+                    n,
+                    Arc::clone(&http_helper),
+                    Arc::clone(&file_storage),
+                ))
+            }))
             .await
         {
             handle.await??;

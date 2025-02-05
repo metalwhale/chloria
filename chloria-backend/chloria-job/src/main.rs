@@ -12,6 +12,7 @@ use env_logger::Env;
 use crate::execution::workshop::Workshop;
 use crate::infrastructure::minio::MinioClient;
 use crate::infrastructure::newsdata::NewsdataClient;
+use crate::infrastructure::reqwest::ReqwestTool;
 use crate::interface::commander::Commander;
 
 #[tokio::main]
@@ -27,6 +28,7 @@ async fn main() -> Result<()> {
     env_logger::init_from_env(Env::new().filter("CHLORIA_LOG_LEVEL"));
     // Initialize infrastructure
     let newsdata_client = NewsdataClient::new(newsdata_api_key, newsdata_pages_num_limit);
+    let reqwest_tool = ReqwestTool::new();
     let minio_client = MinioClient::new(
         minio_operator_sts_endpoint,
         minio_operator_cacert_file,
@@ -35,7 +37,7 @@ async fn main() -> Result<()> {
         chloria_origin_bucket_name,
     )?;
     // Initialize execution
-    let workshop = Workshop::new(&newsdata_client, Arc::new(minio_client));
+    let workshop = Workshop::new(&newsdata_client, Arc::new(reqwest_tool), Arc::new(minio_client));
     // Initialize interface
     let commander = Commander::new(&workshop);
     commander.collect_news().await?;
