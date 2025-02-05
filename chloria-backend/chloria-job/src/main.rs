@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use env_logger::Env;
+use infrastructure::reqwest::ReqwestTool;
 
 use crate::execution::factory::Factory;
 use crate::infrastructure::minio::MinioClient;
@@ -27,6 +28,7 @@ async fn main() -> Result<()> {
     let chloria_origin_bucket_name = env::var("CHLORIA_ORIGIN_BUCKET_NAME")?;
     // Initialize infrastructure
     let newsdata_client = NewsdataClient::new(newsdata_api_key, newsdata_pages_num_limit);
+    let reqwest_tool = ReqwestTool::new();
     let minio_client = MinioClient::new(
         minio_operator_sts_endpoint,
         minio_operator_cacert_file,
@@ -35,7 +37,7 @@ async fn main() -> Result<()> {
         chloria_origin_bucket_name,
     )?;
     // Initialize execution
-    let factory = Factory::new(&newsdata_client, Arc::new(minio_client));
+    let factory = Factory::new(&newsdata_client, Arc::new(reqwest_tool), Arc::new(minio_client));
     // Initialize interface
     let commander = Commander::new(&factory);
     commander.collect_news().await?;
