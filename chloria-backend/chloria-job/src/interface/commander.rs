@@ -1,4 +1,5 @@
 use anyhow::Result;
+use log::info;
 
 use crate::execution::workshop::Workshop;
 
@@ -13,7 +14,8 @@ impl<'c> Commander<'c> {
 
     pub(crate) async fn collect_news(&self) -> Result<()> {
         let case = self.workshop.new_collect_news_case();
-        case.execute().await?;
+        let count = case.execute().await?;
+        info!("count={}", count);
         Ok(())
     }
 }

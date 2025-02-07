@@ -15,7 +15,7 @@ pub(crate) struct FetchNewsArticle {
     pub(crate) published_time: Option<DateTime<Local>>, // Date and time when the news was published
 }
 
-pub(crate) type FetchNewsOutput = JoinHandle<Result<()>>;
+pub(crate) type FetchNewsOutput = JoinHandle<Result<bool>>;
 pub(crate) type FetchNewsHandler = Box<dyn Fn(FetchNewsArticle) -> FetchNewsOutput + Send>;
 
 #[async_trait]

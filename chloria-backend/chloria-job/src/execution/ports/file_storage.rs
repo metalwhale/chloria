@@ -15,8 +15,8 @@ pub(crate) struct UploadFileInput {
     pub(crate) created_time: DateTime<Local>, // Date and time when the file was created
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 #[automock] // See: https://github.com/asomers/mockall/issues/189#issuecomment-689145249
 pub(crate) trait FileStorage {
-    async fn upload_file(&self, input: UploadFileInput) -> Result<()>;
+    async fn upload_file(&self, input: UploadFileInput) -> Result<String>;
 }

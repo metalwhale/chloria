@@ -1,10 +1,10 @@
-use std::fs;
+use std::{fs, io::Cursor};
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, FixedOffset, Local, TimeDelta};
 use minio::s3::{
-    args::BucketExistsArgs,
+    args::PutObjectArgs,
     client::Client as S3Client,
     creds::{Credentials, StaticProvider},
     http::BaseUrl,
@@ -138,9 +138,9 @@ impl MinioClient {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl FileStorage for MinioClient {
-    async fn upload_file(&self, input: UploadFileInput) -> Result<()> {
+    async fn upload_file(&self, input: UploadFileInput) -> Result<String> {
         self.reload().await?;
         let client = self.client.read().await;
         let client = match &*client {
@@ -150,15 +150,22 @@ impl FileStorage for MinioClient {
         let bucket_name = match input.kind {
             FileObjectKind::Origin => &self.origin_bucket_name,
         };
-        let result = client
-            .bucket_exists(&BucketExistsArgs {
-                bucket: &bucket_name,
-                extra_headers: None,
-                extra_query_params: None,
-                region: None,
-            })
+        let object_name = format!(
+            "{}/{}/{}",
+            input.source_name,
+            input.created_time.format("%Y/%m/%d"),
+            input.key
+        );
+        let object_size = input.bytes.len();
+        client
+            .put_object(&mut PutObjectArgs::new(
+                bucket_name,
+                &object_name,
+                &mut Cursor::new(input.bytes),
+                Some(object_size),
+                None,
+            )?)
             .await?;
-        println!("{}", result);
-        Ok(())
+        Ok(object_name)
     }
 }
