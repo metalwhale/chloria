@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
+use tokio::task::LocalSet;
 
 use super::super::{
-    tasks::{run, save_news::SaveNewsTask},
+    tasks::{save_news::SaveNewsTask, Task},
     workshop::Workshop,
 };
 
@@ -18,24 +19,35 @@ impl<'w> Workshop<'w> {
 }
 
 impl<'c> CollectNewsCase<'c> {
-    pub(crate) async fn execute(&self) -> Result<()> {
+    pub(crate) async fn execute(&self) -> Result<i32> {
         let http_helper = Arc::clone(&self.workshop.http_helper);
         let file_storage = Arc::clone(&self.workshop.file_storage);
-        for handle in self
-            .workshop
-            .news_fetcher
-            .fetch_news(Box::new(move |a| {
-                run(SaveNewsTask::new(
-                    a,
-                    Arc::clone(&http_helper),
-                    Arc::clone(&file_storage),
-                ))
-            }))
-            .await
-        {
-            handle.await??;
-        }
-        Ok(())
+        let local = LocalSet::new();
+        let count = local
+            .run_until(async {
+                let mut count = 0;
+                for handle in self
+                    .workshop
+                    .news_fetcher
+                    .fetch_news(Box::new(move |a| {
+                        let task = SaveNewsTask::new(a, Arc::clone(&http_helper), Arc::clone(&file_storage));
+                        tokio::task::spawn_local(async {
+                            let is_effective = task.perform().await?;
+                            Ok(is_effective)
+                        })
+                    }))
+                    .await
+                {
+                    if let Ok(Ok(is_effective)) = handle.await {
+                        if is_effective {
+                            count += 1;
+                        }
+                    }
+                }
+                Ok::<i32, Error>(count)
+            })
+            .await?;
+        Ok(count)
     }
 }
 
@@ -98,7 +110,7 @@ mod tests {
         mock_file_storage
             .expect_upload_file()
             .times((PAGES_NUM * PAGE_NEWS_NUM) as usize)
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .returning(|_| Box::pin(async { Ok("".to_string()) }));
         let workshop = Workshop::new(
             &mock_news_fetcher,
             Arc::new(mock_http_helper),
