@@ -41,6 +41,8 @@ services:
       - MINIO_TENANT_ENDPOINT=http://minio-tenant:9000
       - MINIO_WEB_IDENTITY_TOKEN_FILE=/usr/src/chloria/storage/chloria-backend/token
       - CHLORIA_ORIGIN_BUCKET_NAME=origin
+      - CHLORIA_CASE_PERMITS_NUM=10
+      - CHLORIA_TASK_PERMITS_NUM=10
       - CHLORIA_LOG_LEVEL=info
     volumes:
       - ../:/usr/src/chloria/

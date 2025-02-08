@@ -9,7 +9,7 @@ use super::{
         http_helper::HttpHelper,
         news_fetcher::FetchNewsArticle,
     },
-    Task,
+    LocalTask,
 };
 use crate::domain::file::FileEntity;
 
@@ -34,7 +34,7 @@ impl SaveNewsTask {
 }
 
 #[async_trait(?Send)]
-impl Task for SaveNewsTask {
+impl LocalTask for SaveNewsTask {
     type Output = bool;
 
     async fn perform(self) -> Result<Self::Output> {

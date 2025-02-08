@@ -4,7 +4,7 @@ use log::info;
 use crate::execution::workshop::Workshop;
 
 pub(crate) struct Commander<'c> {
-    workshop: &'c Workshop<'c>,
+    workshop: &'c Workshop,
 }
 
 impl<'c> Commander<'c> {
@@ -13,9 +13,7 @@ impl<'c> Commander<'c> {
     }
 
     pub(crate) async fn collect_news(&self) -> Result<()> {
-        const TASK_PERMITS_NUM: usize = 10;
-        let case = self.workshop.new_collect_news_case(TASK_PERMITS_NUM);
-        let count = case.execute().await?;
+        let count = self.workshop.execute_collect_news_case().await?;
         info!("count={}", count);
         Ok(())
     }
