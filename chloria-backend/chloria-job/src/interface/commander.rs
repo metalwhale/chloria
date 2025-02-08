@@ -13,7 +13,8 @@ impl<'c> Commander<'c> {
     }
 
     pub(crate) async fn collect_news(&self) -> Result<()> {
-        let case = self.workshop.new_collect_news_case();
+        const TASK_PERMITS_NUM: usize = 10;
+        let case = self.workshop.new_collect_news_case(TASK_PERMITS_NUM);
         let count = case.execute().await?;
         info!("count={}", count);
         Ok(())
