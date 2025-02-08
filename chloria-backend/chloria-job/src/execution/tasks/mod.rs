@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 #[async_trait(?Send)]
-pub(super) trait Task {
+pub(super) trait LocalTask {
     type Output: Send;
 
     async fn perform(self) -> Result<Self::Output>;
