@@ -16,9 +16,9 @@ use super::{
 type CollectNewsCaseOutput = i32;
 
 struct CollectNewsCase {
-    news_fetcher: Arc<dyn NewsFetcher + Send + Sync>,
-    http_helper: Arc<dyn HttpHelper + Send + Sync>,
-    file_storage: Arc<dyn FileStorage + Send + Sync>,
+    news_fetcher: Arc<dyn NewsFetcher>,
+    http_helper: Arc<dyn HttpHelper>,
+    file_storage: Arc<dyn FileStorage>,
     task_permits_num: usize,
 }
 
