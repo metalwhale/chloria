@@ -21,7 +21,7 @@ pub(crate) type FetchNewsOutput = JoinHandle<Result<bool>>;
 pub(crate) type FetchNewsHandler = Box<dyn Fn(FetchNewsArticle) -> FetchNewsOutput + Send>;
 
 #[async_trait]
-pub(crate) trait NewsFetcher {
+pub(crate) trait NewsFetcher: Send + Sync {
     async fn fetch_news(&self, handler: FetchNewsHandler) -> Vec<FetchNewsOutput>;
 }
 

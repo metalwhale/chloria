@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use mockall::mock;
 
 #[async_trait]
-pub(crate) trait HttpHelper {
+pub(crate) trait HttpHelper: Send + Sync {
     async fn get(&self, url: &str) -> Result<Vec<u8>>;
 }
 
