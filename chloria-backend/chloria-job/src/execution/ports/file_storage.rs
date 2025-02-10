@@ -17,6 +17,6 @@ pub(crate) struct UploadFileInput {
 
 #[automock]
 #[async_trait(?Send)]
-pub(crate) trait FileStorage {
+pub(crate) trait FileStorage: Send + Sync {
     async fn upload_file(&self, input: UploadFileInput) -> Result<String>;
 }
