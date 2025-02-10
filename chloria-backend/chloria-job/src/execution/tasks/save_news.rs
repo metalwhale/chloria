@@ -15,15 +15,15 @@ use crate::domain::file::FileEntity;
 
 pub(in super::super) struct SaveNewsTask {
     fetch_news_article: FetchNewsArticle,
-    http_helper: Arc<dyn HttpHelper + Send + Sync>,
-    file_storage: Arc<dyn FileStorage + Send + Sync>,
+    http_helper: Arc<dyn HttpHelper>,
+    file_storage: Arc<dyn FileStorage>,
 }
 
 impl SaveNewsTask {
     pub(in super::super) fn new(
         fetch_news_article: FetchNewsArticle,
-        http_helper: Arc<dyn HttpHelper + Send + Sync>,
-        file_storage: Arc<dyn FileStorage + Send + Sync>,
+        http_helper: Arc<dyn HttpHelper>,
+        file_storage: Arc<dyn FileStorage>,
     ) -> Self {
         Self {
             fetch_news_article,
