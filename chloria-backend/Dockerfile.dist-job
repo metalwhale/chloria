@@ -1,0 +1,21 @@
+# Build
+FROM rust:1.84.0-bookworm AS build
+
+COPY . /usr/src/chloria-backend/
+
+WORKDIR /usr/src/chloria-backend/
+
+RUN cargo install diesel_cli@2.2.7 --no-default-features --features postgres
+RUN cargo build --release --package chloria-job
+
+# Distribution
+FROM debian:bookworm-20250203-slim
+
+RUN apt update -y && \
+    apt install -y libpq5 ca-certificates
+
+COPY --from=build /usr/local/cargo/bin/diesel /bin/diesel
+COPY --from=build /usr/src/chloria-backend/target/release/chloria-job /bin/chloria-job
+COPY ./chloria-job/migrations /usr/src/chloria-job/migrations
+
+WORKDIR /usr/src/chloria-job/
