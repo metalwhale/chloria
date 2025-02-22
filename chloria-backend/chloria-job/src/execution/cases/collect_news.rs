@@ -23,7 +23,7 @@ use crate::domain::news::NewsEntity;
 type CollectNewsCaseOutput = i32;
 
 struct CollectNewsCase {
-    news_fetcher: Arc<dyn NewsFetcher>,
+    news_fetchers: Vec<Arc<dyn NewsFetcher>>,
     http_helper: Arc<dyn HttpHelper>,
     file_storage: Arc<dyn FileStorage>,
     repository: Arc<dyn Repository>,
@@ -33,7 +33,7 @@ struct CollectNewsCase {
 impl Workshop {
     pub(crate) async fn execute_collect_news_case(&self) -> Result<CollectNewsCaseOutput> {
         let case = CollectNewsCase {
-            news_fetcher: Arc::clone(&self.news_fetcher),
+            news_fetchers: self.news_fetchers.iter().map(|f| Arc::clone(f)).collect(),
             http_helper: Arc::clone(&self.http_helper),
             file_storage: Arc::clone(&self.file_storage),
             repository: Arc::clone(&self.repository),
@@ -50,37 +50,46 @@ impl LocalCase for CollectNewsCase {
     async fn execute(self) -> Result<Self::Output> {
         let semaphore = Arc::new(Semaphore::new(self.task_permits_num));
         let mut count = 0;
-        for (article_id, handle) in self
-            .news_fetcher
-            .fetch_news(Box::new(move |article| {
-                let news = NewsEntity::new(article.id);
-                let task = SaveNewsTask::new(
-                    SaveNewsInput {
-                        source_name: article.source_name,
-                        article_id: news.article_id.clone(),
-                        link: article.link,
-                        title: article.title,
-                        short_text: article.short_text,
-                        long_text: article.long_text,
-                        image_url: article.image_url,
-                        published_time: article.published_time,
-                    },
-                    Arc::clone(&self.http_helper),
-                    Arc::clone(&self.file_storage),
-                    Arc::clone(&self.repository),
-                );
-                let semaphore = Arc::clone(&semaphore);
-                (
-                    news.article_id,
-                    tokio::task::spawn_local(async move {
-                        let _permit = semaphore.acquire().await?;
-                        let news_id = task.perform().await?;
-                        Ok(news_id)
-                    }),
-                )
-            }))
-            .await
-        {
+        let mut outputs = vec![];
+        for news_fetcher in self.news_fetchers {
+            let http_helper = Arc::clone(&self.http_helper);
+            let file_storage = Arc::clone(&self.file_storage);
+            let repository = Arc::clone(&self.repository);
+            let semaphore = Arc::clone(&semaphore);
+            for (article_id, handle) in news_fetcher
+                .fetch_news(Box::new(move |article| {
+                    let news = NewsEntity::new(article.id);
+                    let task = SaveNewsTask::new(
+                        SaveNewsInput {
+                            source_name: article.source_name,
+                            article_id: news.article_id.clone(),
+                            link: article.link,
+                            title: article.title,
+                            short_text: article.short_text,
+                            long_text: article.long_text,
+                            image_url: article.image_url,
+                            published_time: article.published_time,
+                        },
+                        Arc::clone(&http_helper),
+                        Arc::clone(&file_storage),
+                        Arc::clone(&repository),
+                    );
+                    let semaphore = Arc::clone(&semaphore);
+                    (
+                        news.article_id,
+                        tokio::task::spawn_local(async move {
+                            let _permit = semaphore.acquire().await?;
+                            let news_id = task.perform().await?;
+                            Ok(news_id)
+                        }),
+                    )
+                }))
+                .await
+            {
+                outputs.push((article_id, handle));
+            }
+        }
+        for (article_id, handle) in outputs {
             if let Ok(result) = handle.await {
                 match result {
                     Ok(news_id) => {
@@ -171,7 +180,7 @@ mod tests {
             .times(CASES_NUM * PAGES_NUM * PAGE_NEWS_NUM)
             .returning(|_| Ok(Some(0)));
         let workshop = Workshop::new(
-            Arc::new(mock_news_fetcher),
+            vec![Arc::new(mock_news_fetcher)],
             Arc::new(mock_http_helper),
             Arc::new(mock_file_storage),
             Arc::new(mock_repository),
