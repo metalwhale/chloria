@@ -11,10 +11,10 @@ use anyhow::Result;
 use env_logger::Env;
 
 use crate::execution::workshop::{Config, Workshop};
-use crate::infrastructure::minio::MinioClient;
-use crate::infrastructure::newsdata::NewsdataClient;
-use crate::infrastructure::postgresql::PostgresqlClient;
-use crate::infrastructure::reqwest::ReqwestTool;
+use crate::infrastructure::{
+    file_storage::minio::MinioClient, http_helper::reqwest::ReqwestTool, news_fetcher::newsdata::NewsdataClient,
+    repository::postgresql::PostgresqlClient,
+};
 use crate::interface::commander::Commander;
 
 #[tokio::main]
@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
     let postgresql_client = PostgresqlClient::new(database_url)?;
     // Initialize execution
     let workshop = Workshop::new(
-        Arc::new(newsdata_client),
+        vec![Arc::new(newsdata_client)],
         Arc::new(reqwest_tool),
         Arc::new(minio_client),
         Arc::new(postgresql_client),
