@@ -365,6 +365,7 @@ dependencies = [
  "minio",
  "mockall",
  "rand 0.9.0",
+ "regex",
  "reqwest 0.12.12",
  "serde",
  "serde-xml-rs",
