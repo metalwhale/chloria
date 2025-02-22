@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use log::{error, info};
+use log::error;
 use tokio::sync::Semaphore;
 
 use super::{
@@ -93,8 +93,7 @@ impl LocalCase for CollectNewsCase {
             if let Ok(result) = handle.await {
                 match result {
                     Ok(news_id) => {
-                        if let Some(news_id) = news_id {
-                            info!("news_id={}, article_id={}", news_id, article_id);
+                        if let Some(_) = news_id {
                             count += 1;
                         }
                     }
