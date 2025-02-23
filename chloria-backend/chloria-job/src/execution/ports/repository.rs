@@ -17,5 +17,5 @@ pub(crate) struct InsertNewsInput {
 #[automock]
 #[async_trait]
 pub(crate) trait Repository: Send + Sync {
-    async fn insert_news(&self, input: InsertNewsInput) -> Result<Option<i32>>;
+    async fn insert_news(&self, inputs: Vec<InsertNewsInput>) -> Result<Vec<i32>>;
 }

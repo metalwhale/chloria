@@ -40,23 +40,25 @@ struct InsertNewsValue {
 
 #[async_trait]
 impl Repository for PostgresqlClient {
-    async fn insert_news(&self, input: InsertNewsInput) -> Result<Option<i32>> {
-        let value = InsertNewsValue {
-            source_name: input.source_name,
-            article_id: input.article_id,
-            link: input.link,
-            title: input.title,
-            short_text: input.short_text,
-            long_text: input.long_text,
-            image_path: input.image_path,
-            published_time: input.published_time,
-        };
-        let news_id = diesel::insert_into(news::table)
-            .values(&value)
+    async fn insert_news(&self, inputs: Vec<InsertNewsInput>) -> Result<Vec<i32>> {
+        let values: Vec<InsertNewsValue> = inputs
+            .into_iter()
+            .map(|input| InsertNewsValue {
+                source_name: input.source_name,
+                article_id: input.article_id,
+                link: input.link,
+                title: input.title,
+                short_text: input.short_text,
+                long_text: input.long_text,
+                image_path: input.image_path,
+                published_time: input.published_time,
+            })
+            .collect();
+        let news_ids = diesel::insert_into(news::table)
+            .values(&values)
             .on_conflict_do_nothing()
             .returning(news::id)
-            .get_result(&mut self.pool.get()?)
-            .optional()?;
-        Ok(news_id)
+            .get_results(&mut self.pool.get()?)?;
+        Ok(news_ids)
     }
 }

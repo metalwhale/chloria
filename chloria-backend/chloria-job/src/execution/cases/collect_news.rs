@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Local;
 use log::error;
-use tokio::sync::Semaphore;
+use tokio::sync::{mpsc, Semaphore};
 
 use super::{
     super::{
@@ -20,24 +20,30 @@ use super::{
 };
 use crate::domain::news::NewsEntity;
 
-type CollectNewsCaseOutput = i32;
-
-const TASK_PERMITS_NUM: usize = 10;
+type CollectNewsCaseOutput = (usize, usize);
 
 struct CollectNewsCase {
     news_fetchers: Vec<Arc<dyn NewsFetcher>>,
     http_helper: Arc<dyn HttpHelper>,
     file_storage: Arc<dyn FileStorage>,
     repository: Arc<dyn Repository>,
+    task_permits_num: usize,
+    insert_batch_size: usize,
 }
 
 impl Workshop {
-    pub(crate) async fn execute_collect_news_case(&self) -> Result<CollectNewsCaseOutput> {
+    pub(crate) async fn execute_collect_news_case(
+        &self,
+        task_permits_num: usize,
+        insert_batch_size: usize,
+    ) -> Result<CollectNewsCaseOutput> {
         let case = CollectNewsCase {
             news_fetchers: self.news_fetchers.iter().map(|f| Arc::clone(f)).collect(),
             http_helper: Arc::clone(&self.http_helper),
             file_storage: Arc::clone(&self.file_storage),
             repository: Arc::clone(&self.repository),
+            task_permits_num,
+            insert_batch_size,
         };
         self.run_local_case(case).await
     }
@@ -48,78 +54,87 @@ impl LocalCase for CollectNewsCase {
     type Output = CollectNewsCaseOutput;
 
     async fn execute(self) -> Result<Self::Output> {
-        let semaphore = Arc::new(Semaphore::new(TASK_PERMITS_NUM));
-        let mut count = 0;
-        let mut outputs = vec![];
+        const CHANNEL_CAPACITY: usize = 100;
+        let (sender, mut receiver) = mpsc::channel(CHANNEL_CAPACITY);
+        // Save news to the database
+        let receiver_handle = tokio::spawn(async move {
+            let mut insert_news_inputs = vec![];
+            let mut inserted_news_count = 0;
+            while let Some(input) = receiver.recv().await {
+                insert_news_inputs.push(input);
+                if insert_news_inputs.len() >= self.insert_batch_size {
+                    let inputs = insert_news_inputs.drain(..).collect();
+                    match self.repository.insert_news(inputs).await {
+                        Ok(news_ids) => {
+                            inserted_news_count += news_ids.len();
+                        }
+                        Err(error) => error!("error={}", error),
+                    }
+                }
+            }
+            // Remaining news after the channel closed
+            match self.repository.insert_news(insert_news_inputs).await {
+                Ok(news_ids) => {
+                    inserted_news_count += news_ids.len();
+                }
+                Err(error) => error!("error={}", error),
+            }
+            inserted_news_count
+        });
+        // Fetch news from providers
+        let semaphore = Arc::new(Semaphore::new(self.task_permits_num));
+        let mut total_news_count = 0;
         for news_fetcher in self.news_fetchers {
             let http_helper = Arc::clone(&self.http_helper);
             let file_storage = Arc::clone(&self.file_storage);
-            let repository = Arc::clone(&self.repository);
+            let sender = sender.clone();
             let semaphore = Arc::clone(&semaphore);
-            for (article_id, handle) in news_fetcher
+            let handles = news_fetcher
                 .fetch_news(Box::new(move |article| {
                     let news = NewsEntity::new(article.id);
                     let http_helper = Arc::clone(&http_helper);
                     let file_storage = Arc::clone(&file_storage);
-                    let repository = Arc::clone(&repository);
+                    let sender = sender.clone();
                     let semaphore = Arc::clone(&semaphore);
-                    (
-                        news.article_id.clone(),
-                        tokio::task::spawn_local(async move {
-                            let _permit = semaphore.acquire().await?;
-                            let image_path = match article.image_url {
-                                Some(image_url) => match http_helper.get(&image_url).await {
-                                    Ok(image_bytes) => file_storage
-                                        .upload_file(UploadFileInput {
-                                            kind: FileObjectKind::Origin,
-                                            source_name: article.source_name.clone(),
-                                            key: format!("{}.jpg", news.article_id),
-                                            bytes: image_bytes,
-                                            created_time: Local::now(),
-                                        })
-                                        .await
-                                        .ok(),
-                                    Err(_) => None,
-                                },
-                                None => None,
-                            };
-                            let news_id = tokio::spawn(async move {
-                                repository
-                                    .insert_news(InsertNewsInput {
-                                        source_name: article.source_name,
-                                        article_id: news.article_id,
-                                        link: article.link,
-                                        title: article.title,
-                                        short_text: article.short_text,
-                                        long_text: article.long_text,
-                                        image_path,
-                                        published_time: article.published_time,
+                    tokio::task::spawn_local(async move {
+                        let _permit = semaphore.acquire().await?;
+                        let image_path = match article.image_url {
+                            Some(image_url) => match http_helper.get(&image_url).await {
+                                Ok(image_bytes) => file_storage
+                                    .upload_file(UploadFileInput {
+                                        kind: FileObjectKind::Origin,
+                                        source_name: article.source_name.clone(),
+                                        key: format!("{}.jpg", news.article_id),
+                                        bytes: image_bytes,
+                                        created_time: Local::now(),
                                     })
                                     .await
+                                    .ok(),
+                                Err(_) => None,
+                            },
+                            None => None,
+                        };
+                        sender
+                            .send(InsertNewsInput {
+                                source_name: article.source_name,
+                                article_id: news.article_id,
+                                link: article.link,
+                                title: article.title,
+                                short_text: article.short_text,
+                                long_text: article.long_text,
+                                image_path,
+                                published_time: article.published_time,
                             })
-                            .await??;
-                            Ok(news_id)
-                        }),
-                    )
+                            .await?;
+                        Ok(())
+                    })
                 }))
-                .await
-            {
-                outputs.push((article_id, handle));
-            }
+                .await;
+            total_news_count += handles.len();
         }
-        for (article_id, handle) in outputs {
-            if let Ok(result) = handle.await {
-                match result {
-                    Ok(news_id) => {
-                        if let Some(_) = news_id {
-                            count += 1;
-                        }
-                    }
-                    Err(error) => error!("article_id={}, error={}", article_id, error),
-                }
-            }
-        }
-        Ok(count)
+        drop(sender); // Drop early (before awaiting the receiver) to prevent the sender from blocking the channel from closing
+        let inserted_news_count = receiver_handle.await?;
+        Ok((total_news_count, inserted_news_count))
     }
 }
 
@@ -131,17 +146,14 @@ mod tests {
     use chrono::Local;
     use tokio::time;
 
-    use super::{
-        super::super::{
-            ports::{
-                file_storage::MockFileStorage,
-                http_helper::MockHttpHelper,
-                news_fetcher::{FetchNewsArticle, FetchNewsHandler, FetchNewsOutput, MockNewsFetcher},
-                repository::MockRepository,
-            },
-            workshop::{Config, Workshop},
+    use super::super::super::{
+        ports::{
+            file_storage::MockFileStorage,
+            http_helper::MockHttpHelper,
+            news_fetcher::{FetchNewsArticle, FetchNewsHandler, FetchNewsOutput, MockNewsFetcher},
+            repository::MockRepository,
         },
-        TASK_PERMITS_NUM,
+        workshop::{Config, Workshop},
     };
 
     #[tokio::test]
@@ -152,6 +164,8 @@ mod tests {
         const PAGE_LOAD_DURATION: usize = 1000;
         const PAGE_NEWS_NUM: usize = 6;
         const NEWS_LOAD_DURATION: usize = 2000;
+        const TASK_PERMITS_NUM: usize = 10;
+        const INSERT_BATCH_SIZE: usize = 5;
         // Some assumptions for simpler calculation
         assert!(CASES_NUM > CASE_PERMITS_NUM);
         assert!(PAGES_NUM * PAGE_NEWS_NUM > TASK_PERMITS_NUM);
@@ -196,8 +210,8 @@ mod tests {
         let mut mock_repository = MockRepository::new();
         mock_repository
             .expect_insert_news()
-            .times(CASES_NUM * PAGES_NUM * PAGE_NEWS_NUM)
-            .returning(|_| Ok(Some(0)));
+            .times(CASES_NUM * ((PAGES_NUM * PAGE_NEWS_NUM) as f64 / INSERT_BATCH_SIZE as f64).ceil() as usize)
+            .returning(|_| Ok(vec![]));
         let workshop = Workshop::new(
             vec![Arc::new(mock_news_fetcher)],
             Arc::new(mock_http_helper),
@@ -210,7 +224,7 @@ mod tests {
         let start_time = Local::now();
         let mut cases = vec![];
         for _ in 0..CASES_NUM {
-            cases.push(workshop.execute_collect_news_case());
+            cases.push(workshop.execute_collect_news_case(TASK_PERMITS_NUM, INSERT_BATCH_SIZE));
         }
         futures::future::join_all(cases).await;
         let measured_duration = (Local::now() - start_time).num_milliseconds() as usize;
