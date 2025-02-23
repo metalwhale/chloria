@@ -56,7 +56,6 @@ services:
       - CHLORIA_NEWS_FETCHERS=yahoo
       - CHLORIA_ORIGIN_BUCKET_NAME=origin
       - CHLORIA_CASE_PERMITS_NUM=10
-      - CHLORIA_TASK_PERMITS_NUM=10
       - CHLORIA_LOG_LEVEL=info
     volumes:
       - ../:/usr/src/chloria/

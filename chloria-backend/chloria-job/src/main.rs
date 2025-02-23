@@ -42,7 +42,6 @@ async fn main() -> Result<()> {
         .collect();
     let chloria_origin_bucket_name = env::var("CHLORIA_ORIGIN_BUCKET_NAME")?;
     let chloria_case_permits_num = env::var("CHLORIA_CASE_PERMITS_NUM")?.parse().unwrap_or(10);
-    let chloria_task_permits_num = env::var("CHLORIA_TASK_PERMITS_NUM")?.parse().unwrap_or(10);
     env_logger::init_from_env(Env::new().filter("CHLORIA_LOG_LEVEL"));
     // Initialize infrastructure
     let mut news_fetchers: Vec<Arc<dyn NewsFetcher>> = vec![];
@@ -73,7 +72,6 @@ async fn main() -> Result<()> {
         Arc::new(postgresql_client),
         Config {
             case_permits_num: chloria_case_permits_num,
-            task_permits_num: chloria_task_permits_num,
         },
     );
     // Initialize interface

@@ -10,7 +10,6 @@ use super::{
 
 pub(crate) struct Config {
     pub(crate) case_permits_num: usize,
-    pub(crate) task_permits_num: usize,
 }
 
 pub(crate) struct Workshop {
@@ -18,7 +17,6 @@ pub(crate) struct Workshop {
     pub(super) http_helper: Arc<dyn HttpHelper>,
     pub(super) file_storage: Arc<dyn FileStorage>,
     pub(super) repository: Arc<dyn Repository>,
-    pub(super) config: Config,
     semaphore: Arc<Semaphore>,
 }
 
@@ -36,7 +34,6 @@ impl Workshop {
             http_helper,
             file_storage,
             repository,
-            config,
             semaphore,
         }
     }

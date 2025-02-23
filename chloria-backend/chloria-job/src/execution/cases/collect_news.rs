@@ -2,17 +2,17 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use chrono::Local;
 use log::error;
 use tokio::sync::Semaphore;
 
 use super::{
     super::{
         ports::{
-            file_storage::FileStorage, http_helper::HttpHelper, news_fetcher::NewsFetcher, repository::Repository,
-        },
-        tasks::{
-            save_news::{SaveNewsInput, SaveNewsTask},
-            LocalTask,
+            file_storage::{FileObjectKind, FileStorage, UploadFileInput},
+            http_helper::HttpHelper,
+            news_fetcher::NewsFetcher,
+            repository::{InsertNewsInput, Repository},
         },
         workshop::Workshop,
     },
@@ -22,12 +22,13 @@ use crate::domain::news::NewsEntity;
 
 type CollectNewsCaseOutput = i32;
 
+const TASK_PERMITS_NUM: usize = 10;
+
 struct CollectNewsCase {
     news_fetchers: Vec<Arc<dyn NewsFetcher>>,
     http_helper: Arc<dyn HttpHelper>,
     file_storage: Arc<dyn FileStorage>,
     repository: Arc<dyn Repository>,
-    task_permits_num: usize,
 }
 
 impl Workshop {
@@ -37,7 +38,6 @@ impl Workshop {
             http_helper: Arc::clone(&self.http_helper),
             file_storage: Arc::clone(&self.file_storage),
             repository: Arc::clone(&self.repository),
-            task_permits_num: self.config.task_permits_num,
         };
         self.run_local_case(case).await
     }
@@ -48,7 +48,7 @@ impl LocalCase for CollectNewsCase {
     type Output = CollectNewsCaseOutput;
 
     async fn execute(self) -> Result<Self::Output> {
-        let semaphore = Arc::new(Semaphore::new(self.task_permits_num));
+        let semaphore = Arc::new(Semaphore::new(TASK_PERMITS_NUM));
         let mut count = 0;
         let mut outputs = vec![];
         for news_fetcher in self.news_fetchers {
@@ -59,27 +59,45 @@ impl LocalCase for CollectNewsCase {
             for (article_id, handle) in news_fetcher
                 .fetch_news(Box::new(move |article| {
                     let news = NewsEntity::new(article.id);
-                    let task = SaveNewsTask::new(
-                        SaveNewsInput {
-                            source_name: article.source_name,
-                            article_id: news.article_id.clone(),
-                            link: article.link,
-                            title: article.title,
-                            short_text: article.short_text,
-                            long_text: article.long_text,
-                            image_url: article.image_url,
-                            published_time: article.published_time,
-                        },
-                        Arc::clone(&http_helper),
-                        Arc::clone(&file_storage),
-                        Arc::clone(&repository),
-                    );
+                    let http_helper = Arc::clone(&http_helper);
+                    let file_storage = Arc::clone(&file_storage);
+                    let repository = Arc::clone(&repository);
                     let semaphore = Arc::clone(&semaphore);
                     (
-                        news.article_id,
+                        news.article_id.clone(),
                         tokio::task::spawn_local(async move {
                             let _permit = semaphore.acquire().await?;
-                            let news_id = task.perform().await?;
+                            let image_path = match article.image_url {
+                                Some(image_url) => match http_helper.get(&image_url).await {
+                                    Ok(image_bytes) => file_storage
+                                        .upload_file(UploadFileInput {
+                                            kind: FileObjectKind::Origin,
+                                            source_name: article.source_name.clone(),
+                                            key: format!("{}.jpg", news.article_id),
+                                            bytes: image_bytes,
+                                            created_time: Local::now(),
+                                        })
+                                        .await
+                                        .ok(),
+                                    Err(_) => None,
+                                },
+                                None => None,
+                            };
+                            let news_id = tokio::spawn(async move {
+                                repository
+                                    .insert_news(InsertNewsInput {
+                                        source_name: article.source_name,
+                                        article_id: news.article_id,
+                                        link: article.link,
+                                        title: article.title,
+                                        short_text: article.short_text,
+                                        long_text: article.long_text,
+                                        image_path,
+                                        published_time: article.published_time,
+                                    })
+                                    .await
+                            })
+                            .await??;
                             Ok(news_id)
                         }),
                     )
@@ -113,24 +131,26 @@ mod tests {
     use chrono::Local;
     use tokio::time;
 
-    use super::super::super::{
-        ports::{
-            file_storage::MockFileStorage,
-            http_helper::MockHttpHelper,
-            news_fetcher::{FetchNewsArticle, FetchNewsHandler, FetchNewsOutput, MockNewsFetcher},
-            repository::MockRepository,
+    use super::{
+        super::super::{
+            ports::{
+                file_storage::MockFileStorage,
+                http_helper::MockHttpHelper,
+                news_fetcher::{FetchNewsArticle, FetchNewsHandler, FetchNewsOutput, MockNewsFetcher},
+                repository::MockRepository,
+            },
+            workshop::{Config, Workshop},
         },
-        workshop::{Config, Workshop},
+        TASK_PERMITS_NUM,
     };
 
     #[tokio::test]
     async fn check_required_duration() -> Result<()> {
         const CASE_PERMITS_NUM: usize = 2;
-        const TASK_PERMITS_NUM: usize = 5;
         const CASES_NUM: usize = 3;
         const PAGES_NUM: usize = 2;
         const PAGE_LOAD_DURATION: usize = 1000;
-        const PAGE_NEWS_NUM: usize = 4;
+        const PAGE_NEWS_NUM: usize = 6;
         const NEWS_LOAD_DURATION: usize = 2000;
         // Some assumptions for simpler calculation
         assert!(CASES_NUM > CASE_PERMITS_NUM);
@@ -185,7 +205,6 @@ mod tests {
             Arc::new(mock_repository),
             Config {
                 case_permits_num: CASE_PERMITS_NUM,
-                task_permits_num: TASK_PERMITS_NUM,
             },
         );
         let start_time = Local::now();
