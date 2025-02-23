@@ -13,8 +13,16 @@ impl<'c> Commander<'c> {
     }
 
     pub(crate) async fn collect_news(&self) -> Result<()> {
-        let count = self.workshop.execute_collect_news_case().await?;
-        info!("count={}", count);
+        const TASK_PERMITS_NUM: usize = 50;
+        const INSERT_BATCH_SIZE: usize = 100;
+        let (total_news_count, inserted_news_count) = self
+            .workshop
+            .execute_collect_news_case(TASK_PERMITS_NUM, INSERT_BATCH_SIZE)
+            .await?;
+        info!(
+            "total_news_count={}, inserted_news_count={}",
+            total_news_count, inserted_news_count
+        );
         Ok(())
     }
 }
