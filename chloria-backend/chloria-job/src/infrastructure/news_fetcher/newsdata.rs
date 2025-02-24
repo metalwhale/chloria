@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::NaiveDateTime;
@@ -86,7 +88,7 @@ impl NewsdataClient {
 
 #[async_trait]
 impl NewsFetcher for NewsdataClient {
-    async fn fetch_news(&self, handler: FetchNewsHandler) -> Vec<FetchNewsOutput> {
+    async fn fetch_news(self: Arc<Self>, handler: FetchNewsHandler) -> Vec<FetchNewsOutput> {
         let mut outputs = vec![];
         let mut remaining_results_num = None;
         let mut page = None;
