@@ -1,10 +1,13 @@
-use anyhow::Result;
+use std::sync::Arc;
+
+use anyhow::{Error, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
 use log::{error, info};
 use regex::Regex;
 use reqwest::Client;
 use serde::Deserialize;
+use tokio::sync::{mpsc, Semaphore};
 
 use crate::execution::ports::news_fetcher::{FetchNewsArticle, FetchNewsHandler, FetchNewsOutput, NewsFetcher};
 
@@ -742,7 +745,7 @@ impl YahooClient {
         }
     }
 
-    async fn fetch_provider(&self, provider: &str) -> Result<Vec<FetchNewsArticle>> {
+    async fn fetch_provider(self: Arc<Self>, provider: &str) -> Result<Vec<FetchNewsArticle>> {
         let mut articles = vec![];
         let url = format!("https://news.yahoo.co.jp/rss/media/{}/all.xml", provider);
         let response_text = Client::new().get(url).send().await?.text().await?;
@@ -789,19 +792,42 @@ impl YahooClient {
 
 #[async_trait]
 impl NewsFetcher for YahooClient {
-    async fn fetch_news(&self, handler: FetchNewsHandler) -> Vec<FetchNewsOutput> {
-        let mut outputs = vec![];
-        for provider in &self.providers {
-            match self.fetch_provider(provider).await {
-                Ok(articles) => {
-                    info!("provider={}, articles.len={}", provider, articles.len());
-                    for article in articles {
-                        outputs.push(handler(article));
-                    }
-                }
-                Err(error) => error!("provider={}, error={}", provider, error),
+    async fn fetch_news(self: Arc<Self>, handler: FetchNewsHandler) -> Vec<FetchNewsOutput> {
+        const CHANNEL_CAPACITY: usize = 100;
+        let (sender, mut receiver) = mpsc::channel(CHANNEL_CAPACITY);
+        let receiver_handle = tokio::spawn(async move {
+            let mut outputs = vec![];
+            while let Some(handle) = receiver.recv().await {
+                outputs.push(handle);
             }
+            outputs
+        });
+        const PROVIDER_PERMITS_NUM: usize = 20;
+        let semaphore = Arc::new(Semaphore::new(PROVIDER_PERMITS_NUM));
+        for provider in &self.providers {
+            let provider = provider.to_string();
+            let self = Arc::clone(&self);
+            let sender = sender.clone();
+            let semaphore = Arc::clone(&semaphore);
+            let handler = Arc::clone(&handler);
+            // Use `spawn_local` to preserve the LocalSet, which is later used by the handler
+            // Ref: `execution::cases::collect_news::CollectNewsCase`
+            tokio::task::spawn_local(async move {
+                let _permit = semaphore.acquire().await?;
+                match self.fetch_provider(&provider).await {
+                    Ok(articles) => {
+                        info!("provider={}, articles.len={}", provider, articles.len());
+                        for article in articles {
+                            sender.send(handler(article)).await?;
+                        }
+                    }
+                    Err(error) => error!("provider={}, error={}", provider, error),
+                }
+                Ok::<(), Error>(())
+            });
         }
+        drop(sender); // Drop early (before awaiting the receiver) to prevent the sender from blocking the channel from closing
+        let outputs = receiver_handle.await.unwrap_or(vec![]);
         outputs
     }
 }

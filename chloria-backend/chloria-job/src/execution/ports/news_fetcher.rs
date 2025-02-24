@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
@@ -16,10 +18,10 @@ pub(crate) struct FetchNewsArticle {
 }
 
 pub(crate) type FetchNewsOutput = JoinHandle<Result<()>>;
-pub(crate) type FetchNewsHandler = Box<dyn Fn(FetchNewsArticle) -> FetchNewsOutput + Send>;
+pub(crate) type FetchNewsHandler = Arc<dyn Fn(FetchNewsArticle) -> FetchNewsOutput + Send + Sync>;
 
 #[async_trait]
 #[automock] // See: https://github.com/asomers/mockall/issues/189#issuecomment-689145249
 pub(crate) trait NewsFetcher: Send + Sync {
-    async fn fetch_news(&self, handler: FetchNewsHandler) -> Vec<FetchNewsOutput>;
+    async fn fetch_news(self: Arc<Self>, handler: FetchNewsHandler) -> Vec<FetchNewsOutput>;
 }

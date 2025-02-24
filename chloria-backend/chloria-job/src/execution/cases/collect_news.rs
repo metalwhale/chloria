@@ -90,7 +90,7 @@ impl LocalCase for CollectNewsCase {
             let sender = sender.clone();
             let semaphore = Arc::clone(&semaphore);
             let handles = news_fetcher
-                .fetch_news(Box::new(move |article| {
+                .fetch_news(Arc::new(move |article| {
                     let news = NewsEntity::new(article.id);
                     let http_helper = Arc::clone(&http_helper);
                     let file_storage = Arc::clone(&file_storage);
