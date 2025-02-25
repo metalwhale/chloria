@@ -56,6 +56,7 @@ services:
       - DATABASE_URL=postgres://${POSTGRESQL_USER}:${POSTGRESQL_PASSWORD}@postgresql/${POSTGRESQL_DB}
       - CHLORIA_NEWS_FETCHERS=yahoo
       - CHLORIA_ORIGIN_BUCKET_NAME=origin
+      - CHLORIA_JOB_INTERVAL=12
       - CHLORIA_CASE_PERMITS_NUM=10
       - CHLORIA_LOG=info
     volumes:
