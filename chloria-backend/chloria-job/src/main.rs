@@ -40,6 +40,7 @@ async fn main() -> Result<()> {
         .into_iter()
         .map(|f| f.to_string())
         .collect();
+    let chloria_job_interval = env::var("CHLORIA_JOB_INTERVAL")?.parse()?; // In hours
     let chloria_origin_bucket_name = env::var("CHLORIA_ORIGIN_BUCKET_NAME")?;
     let chloria_case_permits_num = env::var("CHLORIA_CASE_PERMITS_NUM")?.parse().unwrap_or(10);
     env_logger::init_from_env(Env::new().filter("CHLORIA_LOG_LEVEL"));
@@ -52,7 +53,7 @@ async fn main() -> Result<()> {
         }
     }
     if chloria_news_fetchers.contains(&"yahoo".to_string()) {
-        let yahoo_client = YahooClient::new();
+        let yahoo_client = YahooClient::new(chloria_job_interval);
         news_fetchers.push(Arc::new(yahoo_client));
     }
     let reqwest_tool = ReqwestTool::new();

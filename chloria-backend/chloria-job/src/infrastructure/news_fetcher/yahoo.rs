@@ -36,10 +36,11 @@ struct NewsResponseChannelItem {
 
 pub(crate) struct YahooClient {
     providers: Vec<String>,
+    interval: i64,
 }
 
 impl YahooClient {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(interval: i64) -> Self {
         Self {
             // TODO: Find a better way to retrieve the list of providers
             providers: vec![
@@ -742,6 +743,7 @@ impl YahooClient {
             .iter()
             .map(|p| p.to_string())
             .collect(),
+            interval,
         }
     }
 
@@ -766,7 +768,7 @@ impl YahooClient {
                 Some(pub_date) => match DateTime::parse_from_rfc2822(&pub_date) {
                     Ok(published_time) => {
                         let published_time: DateTime<Local> = published_time.into();
-                        if (now - published_time).num_days() > 0 {
+                        if (now - published_time).num_hours() >= self.interval {
                             continue;
                         }
                         Some(published_time)
