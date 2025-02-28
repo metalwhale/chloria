@@ -1,0 +1,16 @@
+# Build
+FROM rust:1.84.0-bookworm AS build
+
+RUN cargo install diesel_cli@2.2.7 --no-default-features --features postgres
+
+# Distribution
+FROM debian:bookworm-20250203-slim
+
+RUN apt update -y && \
+    apt install -y libpq5
+
+COPY --from=build /usr/local/cargo/bin/diesel /bin/diesel
+COPY ./migrations /usr/src/migrations
+
+# Ref: https://github.com/diesel-rs/diesel/blob/v2.2.7/diesel_cli/src/migrations/mod.rs#L287
+ENV MIGRATION_DIRECTORY /usr/src/migrations

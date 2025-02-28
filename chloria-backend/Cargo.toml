@@ -1,4 +1,4 @@
 [workspace]
 
-members = ["chloria-job"]
+members = ["chloria-api", "chloria-job"]
 resolver = "2"

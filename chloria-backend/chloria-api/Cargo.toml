@@ -1,0 +1,7 @@
+[package]
+name = "chloria-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+diesel = { version = "2.2.7", features = ["postgres"] }
