@@ -53,8 +53,14 @@ services:
       - MINIO_TENANT_ENDPOINT=http://minio-tenant:9000
       - MINIO_WEB_IDENTITY_TOKEN_FILE=/usr/src/chloria/storage/chloria-backend/token
       - DATABASE_URL=postgres://${POSTGRESQL_USER}:${POSTGRESQL_PASSWORD}@postgresql/${POSTGRESQL_DB}
+      # Chloria job
       - CHLORIA_NEWS_FETCHERS=yahoo
       - CHLORIA_JOB_INTERVAL=12
+      # Chloria api
+      - CHLORIA_JWT_KEY=${CHLORIA_JWT_KEY}
+      - CHLORIA_JWT_LIFETIME=3600 # 1 hour
+      - CHLORIA_API_PORT=3000
+      # Common
       - CHLORIA_ORIGIN_BUCKET_NAME=origin
       - CHLORIA_CASE_PERMITS_NUM=10
       - CHLORIA_LOG_LEVEL=info

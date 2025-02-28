@@ -1,6 +1,26 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    client_credentials (id) {
+        id -> Int4,
+        api_key -> Text,
+        api_secret -> Text,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    clients (id) {
+        id -> Int4,
+        authentication_method -> Text,
+        authentication_registry -> Text,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     news (id) {
         id -> Int4,
         source_name -> Text,
@@ -15,3 +35,7 @@ diesel::table! {
         updated_at -> Timestamptz,
     }
 }
+
+diesel::joinable!(client_credentials -> clients (id));
+
+diesel::allow_tables_to_appear_in_same_query!(client_credentials, clients, news,);
