@@ -16,9 +16,13 @@ use jsonwebtoken::{decode, encode, Header, Validation};
 use serde::{Deserialize, Serialize};
 
 use super::{super::state::RouterState, ErrorResponse};
+use crate::execution::cases::authenticate::{AuthenticateCaseInput, AuthenticateCaseOutput};
 
 #[derive(Deserialize)]
-pub(in super::super) struct AuthenticateRequest {}
+pub(in super::super) struct AuthenticateRequest {
+    api_key: String,
+    api_secret: String,
+}
 
 #[derive(Serialize)]
 pub(in super::super) struct AuthenticateResponse {
@@ -34,6 +38,26 @@ pub(in super::super) async fn authenticate(
     State(state): State<RouterState>,
     Json(request): Json<AuthenticateRequest>,
 ) -> Result<Json<AuthenticateResponse>, (StatusCode, Json<ErrorResponse>)> {
+    match state
+        .workshop
+        .execute_authenticate_case(AuthenticateCaseInput {
+            api_key: request.api_key,
+            api_secret: request.api_secret,
+        })
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string().into())))?
+    {
+        AuthenticateCaseOutput::Success => {}
+        output => {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    code: Some(output.to_string()),
+                    ..Default::default()
+                }),
+            ));
+        }
+    }
     let claim = Claim {
         exp: SystemTime::now()
             .duration_since(UNIX_EPOCH)
