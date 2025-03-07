@@ -143,8 +143,8 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use anyhow::Result;
-    use chrono::Local;
-    use tokio::time;
+    use chrono::{DateTime, Local};
+    use tokio::{sync::Mutex, time};
 
     use super::super::super::{
         ports::{
@@ -160,7 +160,7 @@ mod tests {
     async fn check_required_duration() -> Result<()> {
         const CASE_PERMITS_NUM: usize = 2;
         const CASES_NUM: usize = 3;
-        const PAGES_NUM: usize = 2;
+        const PAGES_NUM: usize = 4;
         const PAGE_LOAD_DURATION: usize = 1000;
         const PAGE_NEWS_NUM: usize = 6;
         const NEWS_LOAD_DURATION: usize = 2000;
@@ -170,7 +170,11 @@ mod tests {
         assert!(CASES_NUM > CASE_PERMITS_NUM);
         assert!(PAGES_NUM * PAGE_NEWS_NUM > TASK_PERMITS_NUM);
         assert!(NEWS_LOAD_DURATION > PAGE_LOAD_DURATION);
-        async fn fetch_news(handler: FetchNewsHandler) -> Vec<FetchNewsOutput> {
+        assert!(PAGES_NUM * NEWS_LOAD_DURATION > PAGE_LOAD_DURATION + NEWS_LOAD_DURATION);
+        async fn fetch_news(
+            finish_fetch_time: Arc<Mutex<Option<DateTime<Local>>>>,
+            handler: FetchNewsHandler,
+        ) -> Vec<FetchNewsOutput> {
             let mut outputs = vec![];
             for _ in 0..PAGES_NUM {
                 time::sleep(Duration::from_millis(PAGE_LOAD_DURATION as u64)).await;
@@ -187,16 +191,33 @@ mod tests {
                     }));
                 }
             }
+            // Time when the first case finishes fetching news
+            let mut finish_fetch_time = finish_fetch_time.lock().await;
+            if finish_fetch_time.is_none() {
+                *finish_fetch_time = Some(Local::now());
+            }
             outputs
         }
         async fn get() -> Result<Vec<u8>> {
             time::sleep(Duration::from_millis(NEWS_LOAD_DURATION as u64)).await;
             Ok(vec![])
         }
+        async fn insert_news(start_insert_time: Arc<Mutex<Option<DateTime<Local>>>>) -> Result<Vec<i32>> {
+            // Time when the first case starts inserting news
+            let mut start_insert_time = start_insert_time.lock().await;
+            if start_insert_time.is_none() {
+                *start_insert_time = Some(Local::now());
+            }
+            Ok(vec![])
+        }
+        let finish_fetch_time = Arc::new(Mutex::new(None));
         let mut mock_news_fetcher = MockNewsFetcher::new();
-        mock_news_fetcher
-            .expect_fetch_news()
-            .returning(|h| Box::pin(fetch_news(h)));
+        {
+            let finish_fetch_time = Arc::clone(&finish_fetch_time);
+            mock_news_fetcher
+                .expect_fetch_news()
+                .returning(move |h| Box::pin(fetch_news(Arc::clone(&finish_fetch_time), h)));
+        }
         let mut mock_http_helper = MockHttpHelper::new();
         mock_http_helper
             .expect_get()
@@ -207,11 +228,15 @@ mod tests {
             .expect_upload_file()
             .times(CASES_NUM * PAGES_NUM * PAGE_NEWS_NUM)
             .returning(|_| Box::pin(async { Ok("".to_string()) }));
+        let start_insert_time = Arc::new(Mutex::new(None));
         let mut mock_repository = MockRepository::new();
-        mock_repository
-            .expect_insert_news()
-            .times(CASES_NUM * ((PAGES_NUM * PAGE_NEWS_NUM) as f64 / INSERT_BATCH_SIZE as f64).ceil() as usize)
-            .returning(|_| Ok(vec![]));
+        {
+            let start_insert_time = Arc::clone(&start_insert_time);
+            mock_repository
+                .expect_insert_news()
+                .times(CASES_NUM * ((PAGES_NUM * PAGE_NEWS_NUM) as f64 / INSERT_BATCH_SIZE as f64).ceil() as usize)
+                .returning(move |_| Box::pin(insert_news(Arc::clone(&start_insert_time))));
+        }
         let workshop = Workshop::new(
             vec![Arc::new(mock_news_fetcher)],
             Arc::new(mock_http_helper),
@@ -227,6 +252,11 @@ mod tests {
             cases.push(workshop.execute_collect_news_case(TASK_PERMITS_NUM, INSERT_BATCH_SIZE));
         }
         futures::future::join_all(cases).await;
+        let finish_fetch_time = finish_fetch_time.lock().await;
+        let start_insert_time = start_insert_time.lock().await;
+        assert!(finish_fetch_time.is_some());
+        assert!(start_insert_time.is_some());
+        assert!(finish_fetch_time.unwrap() > start_insert_time.unwrap());
         let measured_duration = (Local::now() - start_time).num_milliseconds() as usize;
         let estimated_duration = (PAGE_LOAD_DURATION
             + ((PAGES_NUM * PAGE_NEWS_NUM) as f64 / TASK_PERMITS_NUM as f64).ceil() as usize * NEWS_LOAD_DURATION)
