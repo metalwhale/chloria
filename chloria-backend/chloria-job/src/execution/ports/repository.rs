@@ -1,7 +1,9 @@
+use std::{future::Future, pin::Pin};
+
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
-use mockall::automock;
+use mockall::mock;
 
 pub(crate) struct InsertNewsInput {
     pub(crate) source_name: String,        // Code name of the source used to fetch the news
@@ -14,8 +16,21 @@ pub(crate) struct InsertNewsInput {
     pub(crate) published_time: Option<DateTime<Local>>, // Date and time when the news was published
 }
 
-#[automock]
 #[async_trait]
 pub(crate) trait Repository: Send + Sync {
     async fn insert_news(&self, inputs: Vec<InsertNewsInput>) -> Result<Vec<i32>>;
+}
+
+mock! {
+    pub(in super::super) Repository {}
+
+    impl Repository for Repository {
+        fn insert_news<'life0, 'async_trait>(
+            &'life0 self,
+            inputs: Vec<InsertNewsInput>,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<i32>>> + Send + 'async_trait>>
+        where
+            'life0: 'async_trait,
+            Self: 'async_trait;
+    }
 }
