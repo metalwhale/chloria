@@ -14,8 +14,8 @@ pub(crate) struct InsertNewsInput {
     pub(crate) published_time: Option<DateTime<Local>>, // Date and time when the news was published
 }
 
-#[automock]
 #[async_trait]
+#[automock] // See: https://github.com/asomers/mockall/issues/189#issuecomment-689145249
 pub(crate) trait Repository: Send + Sync {
     async fn insert_news(&self, inputs: Vec<InsertNewsInput>) -> Result<Vec<i32>>;
 }
