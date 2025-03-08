@@ -7,7 +7,10 @@ use jsonwebtoken::{DecodingKey, EncodingKey};
 use tower::ServiceBuilder;
 
 use super::{
-    adapters::auth::{authenticate, authorize},
+    adapters::{
+        auth::{authenticate, authorize},
+        read_news::read_news,
+    },
     state::{RouterState, RouterStateJwt},
 };
 use crate::execution::workshop::Workshop;
@@ -31,9 +34,8 @@ pub(crate) fn new(config: RouterConfig, workshop: Workshop) -> Router {
         .with_state(state.clone());
     let authorized_router = Router::new()
         .route("/news", get(read_news))
-        .route_layer(ServiceBuilder::new().layer(middleware::from_fn_with_state(state, authorize)));
+        .route_layer(ServiceBuilder::new().layer(middleware::from_fn_with_state(state.clone(), authorize)))
+        .with_state(state.clone());
     let router = Router::new().merge(public_router).merge(authorized_router);
     router
 }
-
-async fn read_news() {}

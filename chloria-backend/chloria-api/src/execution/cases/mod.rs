@@ -1,4 +1,5 @@
 pub(crate) mod authenticate;
+pub(crate) mod read_news;
 
 use anyhow::Result;
 use async_trait::async_trait;
