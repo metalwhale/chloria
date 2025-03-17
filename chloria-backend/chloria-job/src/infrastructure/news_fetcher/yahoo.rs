@@ -1,11 +1,13 @@
-use std::sync::Arc;
+use std::{sync::Arc, usize::MAX};
 
-use anyhow::{Error, Result};
+use anyhow::{bail, Error, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
+use html2text::render::RichDecorator;
 use log::{error, info};
 use regex::Regex;
 use reqwest::Client;
+use scraper::{Html, Selector};
 use serde::Deserialize;
 use tokio::sync::{mpsc, Semaphore};
 
@@ -755,15 +757,9 @@ impl YahooClient {
         // Links follow the format: `https://news.yahoo.co.jp/articles/${ID}?source=rss`
         // or `https://news.yahoo.co.jp/articles/${ID}/images/${IMAGE_INDEX}?source=rss`
         let link_regex = Regex::new(r"https://news.yahoo.co.jp/articles/(?<id>[^/?]+)")?;
+        let content_selector = Selector::parse("article#uamods .article_body").unwrap();
         let now = Local::now();
         for item in response.channel.items.into_iter() {
-            let (id, link) = match item.link {
-                Some(link) => match link_regex.captures(&link) {
-                    Some(captures) => (Some(captures["id"].to_string()), Some(link)),
-                    None => (None, None),
-                },
-                None => (None, None),
-            };
             let published_time = match item.pub_date {
                 Some(pub_date) => match DateTime::parse_from_rfc2822(&pub_date) {
                     Ok(published_time) => {
@@ -777,18 +773,40 @@ impl YahooClient {
                 },
                 None => None,
             };
+            let (id, content, link) = match item.link {
+                Some(link) => match link_regex.captures(&link) {
+                    Some(captures) => (
+                        Some(captures["id"].to_string()),
+                        Self::extract_content(&content_selector, &link).await.ok(),
+                        Some(link),
+                    ),
+                    None => (None, None, None),
+                },
+                None => (None, None, None),
+            };
             articles.push(FetchNewsArticle {
                 source_name: "Yahoo".to_string(),
                 id,
                 link,
                 title: item.title,
                 short_text: item.description,
-                long_text: None,
+                long_text: content,
                 image_url: item.image.filter(|u| !u.contains("default.jpg")),
                 published_time,
             });
         }
         Ok(articles)
+    }
+
+    async fn extract_content(content_selector: &Selector, link: &str) -> Result<String> {
+        let document_html = Html::parse_document(&Client::new().get(link).send().await?.text().await?);
+        let Some(content_element) = document_html.select(content_selector).next() else {
+            bail!("No content found at {}.", link);
+        };
+        let content_html = content_element.html();
+        let content = html2text::from_read_with_decorator(content_html.as_bytes(), MAX, RichDecorator::new())?;
+        // TODO: Extract all content if there are multiple pages
+        Ok(content)
     }
 }
 
