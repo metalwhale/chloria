@@ -6,10 +6,11 @@ use diesel::{
     r2d2::{ConnectionManager, Pool},
     PgConnection,
 };
+use log::info;
 
 use crate::{
     execution::ports::repository::{InsertNewsInput, Repository},
-    schema::news,
+    schema::news::{self, article_id},
 };
 
 pub(crate) struct PostgresqlClient {
@@ -41,6 +42,7 @@ struct InsertNewsValue {
 #[async_trait]
 impl Repository for PostgresqlClient {
     async fn insert_news(&self, inputs: Vec<InsertNewsInput>) -> Result<Vec<i32>> {
+        let total_article_ids: Vec<String> = inputs.iter().map(|i| i.article_id.clone()).collect();
         let values: Vec<InsertNewsValue> = inputs
             .into_iter()
             .map(|input| InsertNewsValue {
@@ -54,11 +56,20 @@ impl Repository for PostgresqlClient {
                 published_time: input.published_time,
             })
             .collect();
-        let news_ids = diesel::insert_into(news::table)
+        let (inserted_news_ids, inserted_article_ids): (Vec<i32>, Vec<String>) = diesel::insert_into(news::table)
             .values(&values)
             .on_conflict_do_nothing()
-            .returning(news::id)
-            .get_results(&mut self.pool.get()?)?;
-        Ok(news_ids)
+            .returning((news::id, article_id))
+            .get_results::<(i32, String)>(&mut self.pool.get()?)?
+            .into_iter()
+            .unzip();
+        let ignored_article_ids: Vec<String> = total_article_ids
+            .into_iter()
+            .filter(|i| !inserted_article_ids.contains(i))
+            .collect();
+        if ignored_article_ids.len() > 0 {
+            info!("ignored_article_ids={:?}", ignored_article_ids);
+        }
+        Ok(inserted_news_ids)
     }
 }
