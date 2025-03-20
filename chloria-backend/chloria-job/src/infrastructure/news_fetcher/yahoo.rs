@@ -2,7 +2,7 @@ use std::{sync::Arc, usize::MAX};
 
 use anyhow::{bail, Error, Result};
 use async_trait::async_trait;
-use chrono::{DateTime, Local};
+use chrono::{offset::LocalResult, DateTime, Datelike, Local, TimeZone, Timelike};
 use html2text::render::RichDecorator;
 use log::{error, info};
 use regex::Regex;
@@ -759,12 +759,30 @@ impl YahooClient {
         let link_regex = Regex::new(r"https://news.yahoo.co.jp/articles/(?<id>[^/?]+)")?;
         let content_selector = Selector::parse("article#uamods .article_body").unwrap();
         let now = Local::now();
+        // We prevent fetching news multiple times by checking if the published time is older than `fetch_time`
+        // adjusted by `self.interval` (see the `for` loop below for details).
+        // However, in some cases, two consecutive jobs may run less than `self.interval` apart,
+        // resulting in news being fetched multiple times.
+        // For example:
+        // - The news was published today at 00:10
+        // - The interval is set to 12 hours:
+        //   - The first job starts at 00:00 and fetches the news at 00:12
+        //   - The second job starts at 12:00 and fetches the news at 12:08
+        // To avoid this, we round down `fetch_time` to the nearest hour,
+        // ensuring that fetches of the same news from two consecutive jobs are spaced exactly `self.interval` apart.
+        let fetch_time = match now
+            .timezone()
+            .with_ymd_and_hms(now.year(), now.month(), now.day(), now.hour(), 0, 0)
+        {
+            LocalResult::Single(rounded_now) => rounded_now,
+            _ => now, // Fallback in case of an error when rounding down
+        };
         for item in response.channel.items.into_iter() {
             let published_time = match item.pub_date {
                 Some(pub_date) => match DateTime::parse_from_rfc2822(&pub_date) {
                     Ok(published_time) => {
                         let published_time: DateTime<Local> = published_time.into();
-                        if (now - published_time).num_hours() >= self.interval {
+                        if fetch_time < published_time || (fetch_time - published_time).num_hours() >= self.interval {
                             continue;
                         }
                         Some(published_time)
