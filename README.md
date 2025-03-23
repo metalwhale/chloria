@@ -21,6 +21,6 @@ docker compose exec chloria-backend bash
 
 Create a dummy token file for retrieving MinIO web identity (it's ok to leave this file empty):
 ```bash
-mkdir -p /usr/src/chloria/storage/chloria-backend/
-touch /usr/src/chloria/storage/chloria-backend/token
+mkdir -p /usr/local/src/chloria/storage/chloria-backend/
+touch /usr/local/src/chloria/storage/chloria-backend/token
 ```

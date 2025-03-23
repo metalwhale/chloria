@@ -11,11 +11,11 @@ services:
       - MINIO_TENANT_ROOT_USER=${MINIO_TENANT_ROOT_USER}
       - MINIO_TENANT_ROOT_PASSWORD=${MINIO_TENANT_ROOT_PASSWORD}
       - CHLORIA_ORIGIN_BUCKET_NAME=origin
-      - POETRY_CACHE_DIR=/usr/src/chloria/storage/minio-operator/cache/pypoetry
+      - POETRY_CACHE_DIR=/usr/local/src/chloria/storage/minio-operator/cache/pypoetry
     volumes:
-      - ../:/usr/src/chloria/
+      - ../:/usr/local/src/chloria/
     tty: true
-    working_dir: /usr/src/chloria/minio-operator/
+    working_dir: /usr/local/src/chloria/minio-operator/
   minio-tenant:
     build:
       context: ../minio-tenant/
@@ -51,7 +51,7 @@ services:
       - MINIO_OPERATOR_STS_ENDPOINT=http://minio-operator:4223
       # - MINIO_OPERATOR_CACERT_FILE= # We don't need this env var in local since STS endpoint is HTTP
       - MINIO_TENANT_ENDPOINT=http://minio-tenant:9000
-      - MINIO_WEB_IDENTITY_TOKEN_FILE=/usr/src/chloria/storage/chloria-backend/token
+      - MINIO_WEB_IDENTITY_TOKEN_FILE=/usr/local/src/chloria/storage/chloria-backend/token
       - DATABASE_URL=postgres://${POSTGRESQL_USER}:${POSTGRESQL_PASSWORD}@postgresql/${POSTGRESQL_DB}
       # Chloria job
       - CHLORIA_NEWS_FETCHERS=yahoo
@@ -65,6 +65,6 @@ services:
       - CHLORIA_CASE_PERMITS_NUM=10
       - CHLORIA_LOG_LEVEL=info
     volumes:
-      - ../:/usr/src/chloria/
+      - ../:/usr/local/src/chloria/
     tty: true
-    working_dir: /usr/src/chloria/chloria-backend/
+    working_dir: /usr/local/src/chloria/chloria-backend/

@@ -7,7 +7,7 @@ RUN apt install -y pipx && \
 ENV HOME=/root
 ENV PATH="$HOME/.local/bin:$PATH"
 
-COPY run.sh /usr/src/run.sh
-RUN chmod +x /usr/src/run.sh
+COPY run.sh /usr/local/src/run.sh
+RUN chmod +x /usr/local/src/run.sh
 
-CMD /usr/src/run.sh
+CMD /usr/local/src/run.sh

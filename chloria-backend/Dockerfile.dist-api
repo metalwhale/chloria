@@ -1,9 +1,9 @@
 # Build
 FROM rust:1.84.0-bookworm AS build
 
-COPY . /usr/src/chloria-backend/
+COPY . /usr/local/src/chloria-backend/
 
-WORKDIR /usr/src/chloria-backend/
+WORKDIR /usr/local/src/chloria-backend/
 
 RUN cargo install diesel_cli@2.2.7 --no-default-features --features postgres
 RUN cargo build --release --package chloria-api
@@ -14,4 +14,4 @@ FROM debian:bookworm-20250203-slim
 RUN apt update -y && \
     apt install -y libpq5
 
-COPY --from=build /usr/src/chloria-backend/target/release/chloria-api /bin/chloria-api
+COPY --from=build /usr/local/src/chloria-backend/target/release/chloria-api /bin/chloria-api
