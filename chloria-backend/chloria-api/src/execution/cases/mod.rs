@@ -1,4 +1,5 @@
 pub(crate) mod authenticate;
+pub(crate) mod create_news_insight;
 pub(crate) mod read_news;
 
 use anyhow::Result;

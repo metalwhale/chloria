@@ -36,6 +36,16 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(client_credentials -> clients (id));
+diesel::table! {
+    news_insights (id) {
+        id -> Int4,
+        fields -> Nullable<Text>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
 
-diesel::allow_tables_to_appear_in_same_query!(client_credentials, clients, news,);
+diesel::joinable!(client_credentials -> clients (id));
+diesel::joinable!(news_insights -> news (id));
+
+diesel::allow_tables_to_appear_in_same_query!(client_credentials, clients, news, news_insights,);

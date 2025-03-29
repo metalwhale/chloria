@@ -9,7 +9,7 @@ use tower::ServiceBuilder;
 use super::{
     adapters::{
         auth::{authenticate, authorize},
-        read_news::read_news,
+        news::{create_news_insight, read_news},
     },
     state::{RouterState, RouterStateJwt},
 };
@@ -34,6 +34,7 @@ pub(crate) fn new(config: RouterConfig, workshop: Workshop) -> Router {
         .with_state(state.clone());
     let authorized_router = Router::new()
         .route("/news", get(read_news))
+        .route("/news_insight", post(create_news_insight))
         .route_layer(ServiceBuilder::new().layer(middleware::from_fn_with_state(state.clone(), authorize)))
         .with_state(state.clone());
     let router = Router::new().merge(public_router).merge(authorized_router);

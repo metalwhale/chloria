@@ -8,10 +8,11 @@ use diesel::{
 };
 
 use crate::{
-    execution::ports::repository::{Repository, SelectNewsInput, SelectNewsOutput},
+    execution::ports::repository::{InsertNewsInsightInput, Repository, SelectNewsInput, SelectNewsOutput},
     schema::{
         client_credentials::dsl::*,
         news::{self, dsl::*},
+        news_insights,
     },
 };
 
@@ -26,6 +27,14 @@ impl PostgresqlClient {
             .build(ConnectionManager::<PgConnection>::new(database_url))?;
         Ok(Self { pool })
     }
+}
+
+#[derive(Insertable, AsChangeset)]
+#[diesel(table_name = news_insights)]
+struct InsertNewsInsightValue {
+    id: i32,
+    fields: String,
+    updated_at: DateTime<Local>,
 }
 
 #[async_trait]
@@ -57,5 +66,24 @@ impl Repository for PostgresqlClient {
             });
         }
         Ok(outputs)
+    }
+
+    async fn insert_news_insight(&self, input: InsertNewsInsightInput) -> Result<()> {
+        let news_id: i32 = news
+            .filter(source_name.eq(input.source_name).and(article_id.eq(input.article_id)))
+            .select(news::id)
+            .first(&mut self.pool.get()?)?;
+        let value = InsertNewsInsightValue {
+            id: news_id,
+            fields: input.fields,
+            updated_at: Local::now(),
+        };
+        diesel::insert_into(news_insights::table)
+            .values(&value)
+            .on_conflict(news_insights::id)
+            .do_update()
+            .set(&value)
+            .execute(&mut self.pool.get()?)?;
+        Ok(())
     }
 }

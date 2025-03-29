@@ -1,5 +1,5 @@
 pub(super) mod auth;
-pub(super) mod read_news;
+pub(super) mod news;
 
 use serde::Serialize;
 use serde_json::Value;
