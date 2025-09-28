@@ -2,9 +2,9 @@
 Chloria is a cute chloroplast. She doesn't perform regular "photosynthesis" but trains OCR models with synthetic photos.
 
 ## Local development
-Change to [`deployment-local`](./deployment-local/) directory:
+Change to [`infra-local`](./infra-local/) directory:
 ```bash
-cd ./deployment-local/
+cd ./infra-local/
 ```
 
 Create a Docker Compose `.env` file and populate its environment variables with the appropriate values:
